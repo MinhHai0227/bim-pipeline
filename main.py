@@ -1,6 +1,5 @@
 from pathlib import Path
 import ifcopenshell
-import ifcopenshell.util
 import ifcopenshell.util.element
 import json
 
@@ -10,65 +9,95 @@ class IFCProcessor:
         self.ifc = ifcopenshell.open(str(ifc_path))
 
     def extract_location(self, element):
-        """Extract floor and room information from an element"""
         floor = None
         room = None
-        
-        # Try to get floor from StoreyName or similar properties
-        if hasattr(element, "Name"):
-            floor = getattr(element, "Name", None)
-        
+
+        container = ifcopenshell.util.element.get_container(element)
+        if container:
+            if container.is_a("IfcBuildingStorey"):
+                floor = container.Name
+            elif container.is_a("IfcSpace"):
+                room = container.Name
+                storey = ifcopenshell.util.element.get_container(container)
+                if storey and storey.is_a("IfcBuildingStorey"):
+                    floor = storey.Name
+
         return floor, room
 
+    def extract_material(self, element):
+        mat = ifcopenshell.util.element.get_material(element)
+        if not mat:
+            return None
+
+        t = mat.is_a()
+
+        # Single material
+        if t == "IfcMaterial":
+            return mat.Name
+
+        # Layer set (IFC2x3 phổ biến — tường nhiều lớp)
+        if t == "IfcMaterialLayerSetUsage":
+            mat = mat.ForLayerSet
+            t = "IfcMaterialLayerSet"
+
+        if t == "IfcMaterialLayerSet":
+            return [
+                layer.Material.Name
+                for layer in mat.MaterialLayers
+                if layer.Material and layer.Material.Name
+            ] or None
+
+        # Constituent set (IFC4)
+        if t == "IfcMaterialConstituentSet":
+            return [
+                c.Material.Name
+                for c in mat.MaterialConstituents
+                if c.Material and c.Material.Name
+            ] or None
+
+        # Material list (fallback)
+        if t == "IfcMaterialList":
+            return [m.Name for m in mat.Materials if m.Name] or None
+
+        return None
+
     def extract_elements(self):
-        """Extract all elements from IFC file"""
+        SKIP_TYPES = {"IfcOpeningElement", "IfcAnnotation", "IfcVirtualElement"}
         result = []
 
         for element in self.ifc.by_type("IfcProduct"):
-            if not hasattr(element, "GlobalId"):
-                continue
-
             ifc_class = element.is_a()
-
-            # Bỏ các object không phải asset vận hành nếu muốn
-            if ifc_class in ["IfcOpeningElement", "IfcAnnotation"]:
+            if ifc_class in SKIP_TYPES:
                 continue
-
-            psets = ifcopenshell.util.element.get_psets(element)
-
-            type_obj = ifcopenshell.util.element.get_type(element)
-            type_name = getattr(type_obj, "Name", None) if type_obj else None
 
             floor, room = self.extract_location(element)
 
-            item = {
+            result.append({
                 "global_id": element.GlobalId,
                 "ifc_class": ifc_class,
-                "name": getattr(element, "Name", None),
-                "type": type_name,
-                "floor": floor,
-                "room": room,
-                "psets": psets,
-            }
-
-            result.append(item)
+                "name":      element.Name,
+                "tag":       getattr(element, "Tag", None),
+                "location": {
+                    "floor": floor,
+                    "room":  room,
+                },
+                "material":   self.extract_material(element),
+                "properties": ifcopenshell.util.element.get_psets(element) or {},
+            })
 
         return result
 
 
 if __name__ == "__main__":
     project_dir = Path(__file__).resolve().parent
-    ifc_path = project_dir / "data" / "Ifc2x3_Duplex_Mechanical.ifc"
-    
+    ifc_path    = project_dir / "data" / "Ifc2x3_Duplex_Architecture.ifc"
+
     processor = IFCProcessor(ifc_path)
-    elements = processor.extract_elements()
-    
-    # Save to JSON file
+    elements  = processor.extract_elements()
+
     output_file = project_dir / "output.json"
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(elements, f, indent=2, ensure_ascii=False)
-    
+
     print(f"Found {len(elements)} elements")
-    print(f"Results saved to: {output_file}")
-
-
+    print(f"Saved to: {output_file}")
