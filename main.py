@@ -3,7 +3,6 @@ import ifcopenshell
 import ifcopenshell.util.element
 import json
 
-
 class IFCProcessor:
     def __init__(self, ifc_path):
         self.ifc = ifcopenshell.open(str(ifc_path))
