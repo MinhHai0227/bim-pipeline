@@ -12,6 +12,7 @@ ENV/
 # Environment files
 .env
 .env.*
+!.env.example
 
 # Distribution / packaging
 build/

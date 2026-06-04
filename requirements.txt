@@ -1,0 +1,6 @@
+fastapi==0.135.3
+uvicorn[standard]==0.44.0
+ifcopenshell==0.8.5
+SQLAlchemy==2.0.49
+psycopg[binary]==3.3.4
+pydantic-settings==2.13.1
