@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-
 from src.api.router import api_router
 from src.core.config import settings
 
@@ -18,6 +17,7 @@ def read_root():
     return {
         "message": "BIM Pipeline API is running",
         "docs": "/docs",
-        "health": "/api/health",
         "database_health": "/api/health/db",
     }
+    
+

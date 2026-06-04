@@ -187,7 +187,7 @@ class IFCProcessor:
 
 if __name__ == "__main__":
     project_dir = Path(__file__).resolve().parent
-    ifc_path    = project_dir / "data" / "Ifc2x3_Duplex_Mechanical.ifc"
+    ifc_path    = project_dir / "data" /"raw" / "Ifc2x3_Duplex_Mechanical.ifc"
 
     processor = IFCProcessor(ifc_path)
     elements  = processor.extract_elements()

@@ -17,7 +17,7 @@ def get_engine() -> Engine:
 
     if _engine is None:
         _engine = create_engine(
-            settings.sqlalchemy_database_url,
+            settings.database_url,
             pool_pre_ping=True,
         )
 
