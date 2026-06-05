@@ -1,7 +1,10 @@
 from fastapi import APIRouter, HTTPException
+
+from src.api.routes.ifc import router as ifc_router
 from src.db.session import ping_database
 
 api_router = APIRouter()
+api_router.include_router(ifc_router)
 
 @api_router.get("/health/db", tags=["health"])
 def database_health_check():

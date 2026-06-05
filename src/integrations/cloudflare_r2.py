@@ -112,6 +112,18 @@ class CloudflareR2Client:
 
         return object_key
 
+    def download_file(self, key: str, destination: str | Path) -> Path:
+        destination_path = Path(destination)
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+
+        self.client().download_file(
+            Bucket=self.bucket_name,
+            Key=key,
+            Filename=str(destination_path),
+        )
+
+        return destination_path
+
     def presigned_get_url(self, key: str, expires_in: int = 3600) -> str:
         return self.client().generate_presigned_url(
             "get_object",

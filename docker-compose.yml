@@ -1,4 +1,78 @@
 services:
+  api:
+    build:
+      context: .
+    container_name: bim_pipeline_api
+    restart: unless-stopped
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      APP_NAME: ${APP_NAME:-BIM Pipeline API}
+      ENVIRONMENT: docker
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-bim_user}:${POSTGRES_PASSWORD:-bim_password}@postgres:5432/${POSTGRES_DB:-bim_pipeline}
+      TMP_IFC_DIR: /tmp/bim-pipeline/ifc
+      MAX_IFC_UPLOAD_SIZE_MB: ${MAX_IFC_UPLOAD_SIZE_MB:-500}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+      CELERY_BROKER_URL: redis://redis:6379/${REDIS_DB:-0}
+      CELERY_RESULT_BACKEND: redis://redis:6379/${REDIS_DB:-0}
+      FRAGMENT_WORKER_URL: http://fragment-worker:8090
+      FRAGMENT_WORKER_TIMEOUT_SECONDS: ${FRAGMENT_WORKER_TIMEOUT_SECONDS:-900}
+      CLOUDFLARE_R2_ACCOUNT_ID: ${CLOUDFLARE_R2_ACCOUNT_ID:-}
+      CLOUDFLARE_R2_ACCESS_KEY_ID: ${CLOUDFLARE_R2_ACCESS_KEY_ID:-}
+      CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${CLOUDFLARE_R2_SECRET_ACCESS_KEY:-}
+      CLOUDFLARE_R2_BUCKET_NAME: ${CLOUDFLARE_R2_BUCKET_NAME:-}
+      CLOUDFLARE_R2_ENDPOINT_URL: ${CLOUDFLARE_R2_ENDPOINT_URL:-}
+      CLOUDFLARE_R2_PUBLIC_BASE_URL: ${CLOUDFLARE_R2_PUBLIC_BASE_URL:-}
+      CLOUDFLARE_R2_REGION: ${CLOUDFLARE_R2_REGION:-auto}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - .:/app
+      - ifc_tmp_data:/tmp/bim-pipeline/ifc
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+    container_name: bim_pipeline_worker
+    restart: unless-stopped
+    command: celery -A src.core.celery_app.celery_app worker --loglevel=info
+    environment:
+      APP_NAME: ${APP_NAME:-BIM Pipeline API}
+      ENVIRONMENT: docker
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-bim_user}:${POSTGRES_PASSWORD:-bim_password}@postgres:5432/${POSTGRES_DB:-bim_pipeline}
+      TMP_IFC_DIR: /tmp/bim-pipeline/ifc
+      MAX_IFC_UPLOAD_SIZE_MB: ${MAX_IFC_UPLOAD_SIZE_MB:-500}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+      CELERY_BROKER_URL: redis://redis:6379/${REDIS_DB:-0}
+      CELERY_RESULT_BACKEND: redis://redis:6379/${REDIS_DB:-0}
+      FRAGMENT_WORKER_URL: http://fragment-worker:8090
+      FRAGMENT_WORKER_TIMEOUT_SECONDS: ${FRAGMENT_WORKER_TIMEOUT_SECONDS:-900}
+      CLOUDFLARE_R2_ACCOUNT_ID: ${CLOUDFLARE_R2_ACCOUNT_ID:-}
+      CLOUDFLARE_R2_ACCESS_KEY_ID: ${CLOUDFLARE_R2_ACCESS_KEY_ID:-}
+      CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${CLOUDFLARE_R2_SECRET_ACCESS_KEY:-}
+      CLOUDFLARE_R2_BUCKET_NAME: ${CLOUDFLARE_R2_BUCKET_NAME:-}
+      CLOUDFLARE_R2_ENDPOINT_URL: ${CLOUDFLARE_R2_ENDPOINT_URL:-}
+      CLOUDFLARE_R2_PUBLIC_BASE_URL: ${CLOUDFLARE_R2_PUBLIC_BASE_URL:-}
+      CLOUDFLARE_R2_REGION: ${CLOUDFLARE_R2_REGION:-auto}
+    volumes:
+      - .:/app
+      - ifc_tmp_data:/tmp/bim-pipeline/ifc
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fragment-worker:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     container_name: bim_pipeline_postgres
@@ -17,5 +91,47 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: bim_pipeline_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  fragment-worker:
+    build:
+      context: ./fragment-worker
+    container_name: bim_pipeline_fragment_worker
+    restart: unless-stopped
+    environment:
+      PORT: 8090
+      FRAGMENT_WORK_DIR: /tmp/bim-pipeline/ifc
+      WEB_IFC_WASM_PATH: /app/node_modules/web-ifc
+    ports:
+      - "${FRAGMENT_WORKER_PORT:-8090}:8090"
+    volumes:
+      - ifc_tmp_data:/tmp/bim-pipeline/ifc
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:8090/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
+  redis_data:
+  ifc_tmp_data:

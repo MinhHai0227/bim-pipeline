@@ -1,0 +1,16 @@
+{
+  "name": "bim-fragment-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "@thatopen/fragments": "3.0.9",
+    "web-ifc": "0.0.68"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

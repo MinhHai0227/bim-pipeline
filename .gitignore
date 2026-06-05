@@ -44,3 +44,4 @@ Thumbs.db
 
 # Local output
 output.json
+data/tmp/
