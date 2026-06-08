@@ -48,9 +48,7 @@ class Asset(Base):
     serial_number: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str | None] = mapped_column(String(64))
     material: Mapped[dict | list | str | None] = mapped_column(JSONB)
-    properties: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    quantities: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    raw_properties: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    cleaning_log: Mapped[list[dict]] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

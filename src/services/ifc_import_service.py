@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
 
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from src.core.config import settings
 from src.ifc.asset_detector import is_operational_asset
+from src.ifc.asset_cleaner import clean_asset_data
 from src.ifc.asset_validator import validate_asset_data
 from src.ifc.extractor import IFCExtractor
 from src.ifc.file_validator import (
@@ -104,6 +106,7 @@ class IfcImportService:
 
     def _process_ifc_file(self, ifc_file: IfcFile, tmp_path: Path) -> None:
         ifc_file.status = IfcFileStatus.PROCESSING
+        ifc_file.error_message = None
         ifc_file.viewer_model_status = "pending"
         ifc_file.viewer_model_error = None
         self.db.add(ifc_file)
@@ -117,6 +120,7 @@ class IfcImportService:
         total_assets = 0
         total_issues = 0
         seen_global_ids: set[str] = set()
+        seen_asset_codes: set[str] = set()
 
         for element in extractor.iter_products():
             total_elements += 1
@@ -130,13 +134,14 @@ class IfcImportService:
                 continue
 
             self._normalize_asset_data(asset_data)
+            cleaning_log = clean_asset_data(asset_data)
+            issues = validate_asset_data(asset_data)
 
-            asset = self._create_asset(ifc_file.id, ifc_element.id, asset_data)
+            asset = self._create_asset(ifc_file.id, ifc_element.id, asset_data, cleaning_log)
             self.db.add(asset)
             self.db.flush()
             total_assets += 1
 
-            issues = validate_asset_data(asset_data)
             global_id = asset_data.get("global_id")
             if global_id:
                 if global_id in seen_global_ids:
@@ -150,6 +155,20 @@ class IfcImportService:
                         }
                     )
                 seen_global_ids.add(global_id)
+
+            asset_code = asset_data.get("asset_code")
+            if asset_code:
+                if asset_code in seen_asset_codes:
+                    issues.append(
+                        {
+                            "stage": ValidationStage.ASSET_VALIDATION,
+                            "severity": ValidationSeverity.ERROR,
+                            "code": "DUPLICATE_ASSET_CODE",
+                            "field": "asset_code",
+                            "message": "Asset code appears more than once in this import.",
+                        }
+                    )
+                seen_asset_codes.add(asset_code)
 
             total_issues += self._create_validation_issues(
                 ifc_file.id,
@@ -200,13 +219,21 @@ class IfcImportService:
     def _normalize_asset_data(self, asset_data: dict) -> None:
         properties = asset_data.get("properties") or {}
         tag = asset_data.get("tag")
+        asset_code_sources = [
+            ("asset_identifier", properties.get("asset_identifier")),
+            ("tag", tag),
+            ("reference", properties.get("reference")),
+            ("global_id", asset_data.get("global_id")),
+        ]
 
-        asset_data["asset_code"] = (
-            properties.get("asset_identifier")
-            or tag
-            or properties.get("reference")
-            or asset_data.get("global_id")
-        )
+        for source, asset_code in asset_code_sources:
+            if asset_code:
+                asset_data["asset_code"] = str(asset_code)
+                asset_data["asset_code_source"] = source
+                return
+
+        asset_data["asset_code"] = None
+        asset_data["asset_code_source"] = None
 
     def _create_ifc_element(self, ifc_file_id: int, asset_data: dict) -> IfcElement:
         return IfcElement(
@@ -219,12 +246,18 @@ class IfcImportService:
             floor=asset_data.get("floor"),
             room=asset_data.get("room"),
             material=asset_data.get("material"),
-            properties=asset_data.get("properties") or {},
-            quantities=asset_data.get("quantities") or {},
-            raw_properties=asset_data.get("raw_properties") or {},
+            properties=deepcopy(asset_data.get("properties") or {}),
+            quantities=deepcopy(asset_data.get("quantities") or {}),
+            raw_properties=deepcopy(asset_data.get("raw_properties") or {}),
         )
 
-    def _create_asset(self, ifc_file_id: int, ifc_element_id: int, asset_data: dict) -> Asset:
+    def _create_asset(
+        self,
+        ifc_file_id: int,
+        ifc_element_id: int,
+        asset_data: dict,
+        cleaning_log: list[dict],
+    ) -> Asset:
         properties = asset_data.get("properties") or {}
 
         return Asset(
@@ -235,7 +268,7 @@ class IfcImportService:
             name=asset_data.get("name"),
             tag=asset_data.get("tag"),
             ifc_class=asset_data.get("ifc_class"),
-            asset_type=asset_data.get("ifc_class"),
+            asset_type=asset_data.get("asset_type") or asset_data.get("ifc_class"),
             system_name=properties.get("system_name"),
             floor=asset_data.get("floor"),
             room=asset_data.get("room"),
@@ -244,9 +277,7 @@ class IfcImportService:
             serial_number=properties.get("serial_number"),
             status=properties.get("status"),
             material=asset_data.get("material"),
-            properties=properties,
-            quantities=asset_data.get("quantities") or {},
-            raw_properties=asset_data.get("raw_properties") or {},
+            cleaning_log=deepcopy(cleaning_log),
         )
 
     def _create_validation_issues(

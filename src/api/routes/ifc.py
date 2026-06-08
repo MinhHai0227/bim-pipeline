@@ -9,13 +9,16 @@ from src.db.session import get_db
 from src.ifc.file_validator import IfcFileValidationError
 from src.integrations.cloudflare_r2 import CloudflareR2ConfigError, get_cloudflare_r2_client
 from src.models.asset import Asset
+from src.models.enums import IfcFileStatus, ValidationSeverity, ValidationStage
 from src.models.ifc_element import IfcElement
 from src.models.ifc_file import IfcFile
-from src.models.enums import IfcFileStatus
+from src.models.validation_issue import ValidationIssue
+from src.schemas.digital_twin_asset import DigitalTwinAssetListResponse
 from src.schemas.ifc_element import IfcElementDetailResponse, IfcElementListResponse
 from src.schemas.ifc_file import IfcFileDeleteResponse, IfcFileListResponse, IfcFileResponse
 from src.schemas.ifc_import import IfcImportQueuedResponse
 from src.schemas.ifc_viewer_model import IfcViewerModelResponse
+from src.schemas.validation_issue import ValidationIssueListResponse, ValidationSummaryResponse
 from src.services.ifc_import_service import IfcImportService
 from src.tasks.ifc_import_tasks import process_uploaded_ifc_file
 
@@ -33,19 +36,29 @@ def _ensure_ifc_file(db: Session, file_id: int) -> IfcFile:
     return ifc_file
 
 
-def _asset_summary(asset: Asset | None) -> dict | None:
+def _element_asset_response(asset: Asset | None) -> dict | None:
     if asset is None:
         return None
 
     return {
         "id": asset.id,
+        "ifc_file_id": asset.ifc_file_id,
+        "ifc_element_id": asset.ifc_element_id,
         "asset_code": asset.asset_code,
+        "global_id": asset.global_id,
+        "name": asset.name,
+        "tag": asset.tag,
+        "ifc_class": asset.ifc_class,
         "asset_type": asset.asset_type,
         "system_name": asset.system_name,
+        "floor": asset.floor,
+        "room": asset.room,
         "manufacturer": asset.manufacturer,
         "model": asset.model,
         "serial_number": asset.serial_number,
         "status": asset.status,
+        "material": asset.material,
+        "cleaning_log": asset.cleaning_log,
     }
 
 
@@ -71,7 +84,7 @@ def _element_detail(element: IfcElement) -> dict:
         "properties": element.properties,
         "quantities": element.quantities,
         "raw_properties": element.raw_properties,
-        "asset": _asset_summary(element.asset),
+        "asset": _element_asset_response(element.asset),
     }
 
 
@@ -96,6 +109,55 @@ def _file_response(ifc_file: IfcFile) -> dict:
         "created_at": ifc_file.created_at,
         "updated_at": ifc_file.updated_at,
     }
+
+
+def _validation_issue_response(issue: ValidationIssue) -> dict:
+    return {
+        "id": issue.id,
+        "ifc_file_id": issue.ifc_file_id,
+        "asset_id": issue.asset_id,
+        "ifc_element_id": issue.ifc_element_id,
+        "global_id": issue.global_id,
+        "ifc_class": issue.ifc_class,
+        "object_name": issue.object_name,
+        "stage": issue.stage,
+        "severity": issue.severity,
+        "code": issue.code,
+        "field": issue.field,
+        "message": issue.message,
+        "created_at": issue.created_at,
+    }
+
+
+def _asset_location(asset: Asset) -> str | None:
+    parts = [part for part in (asset.floor, asset.room) if part]
+    return " > ".join(parts) if parts else None
+
+
+def _digital_twin_asset_response(asset: Asset) -> dict:
+    return {
+        "id": asset.id,
+        "ifc_file_id": asset.ifc_file_id,
+        "ifc_element_id": asset.ifc_element_id,
+        "global_id": asset.global_id,
+        "asset_id": asset.asset_code,
+        "asset_name": asset.name,
+        "asset_type": asset.asset_type,
+        "ifc_class": asset.ifc_class,
+        "system": asset.system_name,
+        "location": _asset_location(asset),
+        "floor": asset.floor,
+        "room_zone": asset.room,
+        "manufacturer": asset.manufacturer,
+        "model": asset.model,
+        "serial_number": asset.serial_number,
+        "status": asset.status,
+        "cleaning_log": asset.cleaning_log,
+    }
+
+
+def _enum_key(value) -> str:
+    return getattr(value, "value", str(value))
 
 
 @router.post("/import", response_model=IfcImportQueuedResponse)
@@ -164,6 +226,128 @@ def list_ifc_files(
 @router.get("/files/{file_id}", response_model=IfcFileResponse)
 def get_ifc_file(file_id: int, db: Session = Depends(get_db)):
     return _file_response(_ensure_ifc_file(db, file_id))
+
+
+@router.get("/files/{file_id}/issues", response_model=ValidationIssueListResponse)
+def list_validation_issues(
+    file_id: int,
+    severity: ValidationSeverity | None = Query(default=None),
+    stage: ValidationStage | None = Query(default=None),
+    code: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    _ensure_ifc_file(db, file_id)
+
+    filters = [ValidationIssue.ifc_file_id == file_id]
+    if severity is not None:
+        filters.append(ValidationIssue.severity == severity)
+    if stage is not None:
+        filters.append(ValidationIssue.stage == stage)
+    if code:
+        filters.append(ValidationIssue.code == code)
+
+    total = db.scalar(select(func.count()).select_from(ValidationIssue).where(*filters)) or 0
+    issues = db.scalars(
+        select(ValidationIssue)
+        .where(*filters)
+        .order_by(ValidationIssue.created_at.desc(), ValidationIssue.id.desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": [_validation_issue_response(issue) for issue in issues],
+    }
+
+
+@router.get("/files/{file_id}/validation-summary", response_model=ValidationSummaryResponse)
+def get_validation_summary(file_id: int, db: Session = Depends(get_db)):
+    _ensure_ifc_file(db, file_id)
+
+    total_issues = (
+        db.scalar(
+            select(func.count())
+            .select_from(ValidationIssue)
+            .where(ValidationIssue.ifc_file_id == file_id)
+        )
+        or 0
+    )
+
+    severity_rows = db.execute(
+        select(ValidationIssue.severity, func.count())
+        .where(ValidationIssue.ifc_file_id == file_id)
+        .group_by(ValidationIssue.severity)
+    ).all()
+    stage_rows = db.execute(
+        select(ValidationIssue.stage, func.count())
+        .where(ValidationIssue.ifc_file_id == file_id)
+        .group_by(ValidationIssue.stage)
+    ).all()
+    code_rows = db.execute(
+        select(ValidationIssue.code, func.count())
+        .where(ValidationIssue.ifc_file_id == file_id)
+        .group_by(ValidationIssue.code)
+        .order_by(func.count().desc(), ValidationIssue.code)
+    ).all()
+
+    return {
+        "file_id": file_id,
+        "total_issues": total_issues,
+        "by_severity": {_enum_key(value): count for value, count in severity_rows},
+        "by_stage": {_enum_key(value): count for value, count in stage_rows},
+        "by_code": {str(value): count for value, count in code_rows},
+    }
+
+
+@router.get("/files/{file_id}/digital-twin-assets", response_model=DigitalTwinAssetListResponse)
+def list_digital_twin_assets(
+    file_id: int,
+    q: str | None = Query(default=None),
+    system: str | None = Query(default=None),
+    asset_type: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    _ensure_ifc_file(db, file_id)
+
+    filters = [Asset.ifc_file_id == file_id]
+    if system:
+        filters.append(Asset.system_name == system)
+    if asset_type:
+        filters.append(Asset.asset_type == asset_type)
+    if q:
+        search = f"%{q}%"
+        filters.append(
+            or_(
+                Asset.asset_code.ilike(search),
+                Asset.global_id.ilike(search),
+                Asset.ifc_class.ilike(search),
+                Asset.name.ilike(search),
+                Asset.tag.ilike(search),
+            )
+        )
+
+    total = db.scalar(select(func.count()).select_from(Asset).where(*filters)) or 0
+    assets = db.scalars(
+        select(Asset)
+        .where(*filters)
+        .order_by(Asset.id)
+        .offset(offset)
+        .limit(limit)
+    ).all()
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": [_digital_twin_asset_response(asset) for asset in assets],
+    }
 
 
 @router.delete("/files/{file_id}", response_model=IfcFileDeleteResponse)
