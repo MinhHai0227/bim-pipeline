@@ -24,6 +24,20 @@ class Settings(BaseSettings):
     fragment_worker_url: str | None = None
     fragment_worker_timeout_seconds: int = 900
 
+    # Autodesk APS / Model Derivative settings
+    autodesk_client_id: str | None = None
+    autodesk_client_secret: str | None = None
+    autodesk_scopes: str = "data:read data:write data:create bucket:create bucket:read"
+    autodesk_token_url: str = "https://developer.api.autodesk.com/authentication/v2/token"
+    autodesk_oss_base_url: str = "https://developer.api.autodesk.com/oss/v2"
+    autodesk_model_derivative_base_url: str = "https://developer.api.autodesk.com/modelderivative/v2"
+    autodesk_bucket_key: str | None = None
+    autodesk_bucket_policy_key: str = "transient"
+    autodesk_model_derivative_poll_interval_seconds: int = 10
+    autodesk_model_derivative_timeout_seconds: int = 1800
+    autodesk_http_timeout_seconds: int = 60
+    autodesk_upload_timeout_seconds: int = 900
+
     # Cloudflare R2 object storage settings
     cloudflare_r2_account_id: str 
     cloudflare_r2_access_key_id: str 

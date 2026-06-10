@@ -20,6 +20,8 @@ class IfcFile(Base):
     __table_args__ = (
         Index("ix_ifc_files_status", "status"),
         Index("ix_ifc_files_created_at", "created_at"),
+        Index("ix_ifc_files_source_format", "source_format"),
+        Index("ix_ifc_files_normalization_status", "normalization_status"),
         Index("ix_ifc_files_viewer_model_status", "viewer_model_status"),
     )
 
@@ -29,6 +31,14 @@ class IfcFile(Base):
     bucket_name: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str | None] = mapped_column(String(255))
     file_size: Mapped[int | None] = mapped_column(BigInteger)
+    source_format: Mapped[str] = mapped_column(String(16), nullable=False, default="ifc")
+    normalized_ifc_storage_key: Mapped[str | None] = mapped_column(String(1024))
+    normalized_ifc_filename: Mapped[str | None] = mapped_column(String(255))
+    normalized_ifc_size: Mapped[int | None] = mapped_column(BigInteger)
+    normalization_status: Mapped[str | None] = mapped_column(String(32))
+    normalization_error: Mapped[str | None] = mapped_column(Text)
+    autodesk_activity_id: Mapped[str | None] = mapped_column(String(255))
+    autodesk_workitem_id: Mapped[str | None] = mapped_column(String(128))
     viewer_model_key: Mapped[str | None] = mapped_column(String(1024))
     viewer_model_format: Mapped[str | None] = mapped_column(String(32))
     viewer_model_status: Mapped[str | None] = mapped_column(String(32))

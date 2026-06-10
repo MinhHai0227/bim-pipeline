@@ -131,6 +131,13 @@ class CloudflareR2Client:
             ExpiresIn=expires_in,
         )
 
+    def presigned_put_url(self, key: str, expires_in: int = 3600) -> str:
+        return self.client().generate_presigned_url(
+            "put_object",
+            Params={"Bucket": self.bucket_name, "Key": key},
+            ExpiresIn=expires_in,
+        )
+
     def public_url(self, key: str) -> str | None:
         public_base_url = _clean(settings.cloudflare_r2_public_base_url)
         if not public_base_url:

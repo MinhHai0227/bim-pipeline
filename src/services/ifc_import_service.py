@@ -17,7 +17,10 @@ from src.ifc.file_validator import (
     IfcFileValidationError,
     validate_ifc_file_size,
     validate_ifc_filename,
+    validate_model_file_size,
+    validate_model_filename,
 )
+from src.integrations.autodesk import AutodeskModelDerivativeClient
 from src.integrations.cloudflare_r2 import CloudflareR2Client, get_cloudflare_r2_client
 from src.integrations.fragment_worker import FragmentWorkerClient
 from src.models.asset import Asset
@@ -41,11 +44,17 @@ class IfcImportService:
         return settings.max_ifc_upload_size_mb * 1024 * 1024
 
     def upload_file_for_background(self, upload: UploadFile) -> IfcFile:
-        safe_filename = validate_ifc_filename(upload.filename)
+        safe_filename, source_format = validate_model_filename(upload.filename)
+        if source_format == "rvt":
+            AutodeskModelDerivativeClient.validate_rvt_to_ifc_settings()
+
         tmp_path = self._save_upload_to_tmp(upload, safe_filename)
 
         try:
-            storage_key = self.storage.build_key(f"{uuid4().hex}-{safe_filename}")
+            storage_key = self.storage.build_key(
+                f"{uuid4().hex}-{safe_filename}",
+                prefix=self._upload_prefix_for_format(source_format),
+            )
             with tmp_path.open("rb") as fileobj:
                 self.storage.upload_fileobj(
                     fileobj=fileobj,
@@ -60,6 +69,11 @@ class IfcImportService:
                 bucket_name=self.storage.bucket_name,
                 content_type=upload.content_type,
                 file_size=tmp_path.stat().st_size,
+                source_format=source_format,
+                normalized_ifc_storage_key=storage_key if source_format == "ifc" else None,
+                normalized_ifc_filename=safe_filename if source_format == "ifc" else None,
+                normalized_ifc_size=tmp_path.stat().st_size if source_format == "ifc" else None,
+                normalization_status="ready" if source_format == "ifc" else "pending",
                 status=IfcFileStatus.UPLOADED,
                 viewer_model_status="pending",
             )
@@ -72,6 +86,12 @@ class IfcImportService:
             raise
         finally:
             tmp_path.unlink(missing_ok=True)
+
+    def _upload_prefix_for_format(self, source_format: str) -> str:
+        if source_format == "ifc":
+            return "ifc-uploads"
+
+        return f"model-uploads/{source_format}"
 
     def _save_upload_to_tmp(self, upload: UploadFile, safe_filename: str) -> Path:
         tmp_dir = Path(settings.tmp_ifc_dir)
@@ -91,13 +111,13 @@ class IfcImportService:
                     tmp_path.unlink(missing_ok=True)
                     raise IfcFileValidationError(
                         "FILE_TOO_LARGE",
-                        f"Uploaded IFC file exceeds {settings.max_ifc_upload_size_mb}MB.",
+                        f"Uploaded model file exceeds {settings.max_ifc_upload_size_mb}MB.",
                     )
 
                 destination.write(chunk)
 
         try:
-            validate_ifc_file_size(file_size, self.max_size_bytes)
+            validate_model_file_size(file_size, self.max_size_bytes)
         except IfcFileValidationError:
             tmp_path.unlink(missing_ok=True)
             raise
@@ -185,7 +205,90 @@ class IfcImportService:
         self._convert_and_upload_viewer_model(ifc_file, tmp_path)
 
     def process_existing_file(self, ifc_file: IfcFile, tmp_path: Path) -> None:
-        self._process_ifc_file(ifc_file, tmp_path)
+        normalized_tmp_path: Path | None = None
+        try:
+            normalized_tmp_path = self._normalize_existing_file(ifc_file, tmp_path)
+            self._process_ifc_file(ifc_file, normalized_tmp_path)
+        finally:
+            if normalized_tmp_path is not None and normalized_tmp_path != tmp_path:
+                normalized_tmp_path.unlink(missing_ok=True)
+
+    def _normalize_existing_file(self, ifc_file: IfcFile, tmp_path: Path) -> Path:
+        source_format = (ifc_file.source_format or tmp_path.suffix.lstrip(".")).lower()
+
+        if source_format == "ifc":
+            ifc_file.normalized_ifc_storage_key = (
+                ifc_file.normalized_ifc_storage_key or ifc_file.storage_key
+            )
+            ifc_file.normalized_ifc_filename = (
+                ifc_file.normalized_ifc_filename or ifc_file.original_filename
+            )
+            ifc_file.normalized_ifc_size = ifc_file.normalized_ifc_size or tmp_path.stat().st_size
+            ifc_file.normalization_status = "ready"
+            ifc_file.normalization_error = None
+            self.db.add(ifc_file)
+            self.db.flush()
+            return tmp_path
+
+        if source_format == "rvt":
+            return self._export_rvt_to_ifc(ifc_file, tmp_path)
+
+        raise IfcFileValidationError(
+            "FILE_EXTENSION_INVALID",
+            f"Unsupported source format for model normalization: {source_format}.",
+        )
+
+    def _export_rvt_to_ifc(self, ifc_file: IfcFile, tmp_path: Path) -> Path:
+        ifc_file.status = IfcFileStatus.PROCESSING
+        ifc_file.normalization_status = "converting"
+        ifc_file.normalization_error = None
+        ifc_file.autodesk_activity_id = "model_derivative:rvt_to_ifc"
+        self.db.add(ifc_file)
+        self.db.flush()
+
+        output_filename = f"{Path(ifc_file.original_filename).stem}-{uuid4().hex}.ifc"
+        output_key = self.storage.build_key(
+            output_filename,
+            prefix="normalized-ifc/autodesk",
+        )
+        exported_path = tmp_path.parent / f"exported-{uuid4().hex}-{output_filename}"
+
+        try:
+            result = AutodeskModelDerivativeClient().export_rvt_to_ifc(
+                input_path=tmp_path,
+                output_path=exported_path,
+                object_name=f"{uuid4().hex}-{Path(ifc_file.original_filename).name}",
+            )
+            autodesk_urn = result.get("urn")
+            ifc_file.autodesk_workitem_id = (
+                autodesk_urn[:128] if isinstance(autodesk_urn, str) else ifc_file.autodesk_workitem_id
+            )
+            validate_ifc_filename(exported_path.name)
+            validate_ifc_file_size(exported_path.stat().st_size, self.max_size_bytes)
+
+            with exported_path.open("rb") as fileobj:
+                self.storage.upload_fileobj(
+                    fileobj=fileobj,
+                    filename=output_filename,
+                    key=output_key,
+                    content_type="application/octet-stream",
+                )
+
+            ifc_file.normalized_ifc_storage_key = output_key
+            ifc_file.normalized_ifc_filename = output_filename
+            ifc_file.normalized_ifc_size = exported_path.stat().st_size
+            ifc_file.normalization_status = "ready"
+            ifc_file.normalization_error = None
+            self.db.add(ifc_file)
+            self.db.flush()
+            return exported_path
+        except Exception as exc:
+            exported_path.unlink(missing_ok=True)
+            ifc_file.normalization_status = "failed"
+            ifc_file.normalization_error = str(exc)
+            self.db.add(ifc_file)
+            self.db.flush()
+            raise
 
     def delete_ifc_file(self, ifc_file: IfcFile) -> list[str]:
         storage_keys = self._storage_keys_for_delete(ifc_file)
@@ -205,7 +308,11 @@ class IfcImportService:
 
     def _storage_keys_for_delete(self, ifc_file: IfcFile) -> list[str]:
         storage_keys = []
-        for storage_key in (ifc_file.storage_key, ifc_file.viewer_model_key):
+        for storage_key in (
+            ifc_file.storage_key,
+            ifc_file.normalized_ifc_storage_key,
+            ifc_file.viewer_model_key,
+        ):
             if storage_key and storage_key not in storage_keys:
                 storage_keys.append(storage_key)
 
@@ -353,14 +460,22 @@ class IfcImportService:
         ifc_file.total_issues = max(ifc_file.total_issues, 1)
         ifc_file.viewer_model_status = "failed"
         ifc_file.viewer_model_error = str(exc)
+        if ifc_file.source_format == "rvt" and ifc_file.normalization_status != "ready":
+            ifc_file.normalization_status = "failed"
+            ifc_file.normalization_error = str(exc)
+            stage = ValidationStage.FILE_VALIDATION
+            code = "RVT_TO_IFC_EXPORT_FAILED"
+        else:
+            stage = ValidationStage.IFC_PARSE
+            code = "IFC_IMPORT_FAILED"
 
         self.db.add(ifc_file)
         self.db.add(
             ValidationIssue(
                 ifc_file_id=ifc_file.id,
-                stage=ValidationStage.IFC_PARSE,
+                stage=stage,
                 severity=ValidationSeverity.ERROR,
-                code="IFC_IMPORT_FAILED",
+                code=code,
                 message=str(exc),
             )
         )

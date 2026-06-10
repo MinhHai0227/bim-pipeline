@@ -13,6 +13,14 @@ class IfcFileResponse(BaseModel):
     bucket_name: str
     content_type: str | None
     file_size: int | None
+    source_format: str
+    normalized_ifc_storage_key: str | None
+    normalized_ifc_filename: str | None
+    normalized_ifc_size: int | None
+    normalization_status: str | None
+    normalization_error: str | None
+    autodesk_activity_id: str | None
+    autodesk_workitem_id: str | None
     schema_name: str | None
     total_elements: int
     total_assets: int

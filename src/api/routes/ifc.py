@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from src.db.session import get_db
 from src.ifc.file_validator import IfcFileValidationError
+from src.integrations.autodesk import AutodeskConfigError
 from src.integrations.cloudflare_r2 import CloudflareR2ConfigError, get_cloudflare_r2_client
 from src.models.asset import Asset
 from src.models.enums import IfcFileStatus, ValidationSeverity, ValidationStage
@@ -97,6 +98,14 @@ def _file_response(ifc_file: IfcFile) -> dict:
         "bucket_name": ifc_file.bucket_name,
         "content_type": ifc_file.content_type,
         "file_size": ifc_file.file_size,
+        "source_format": ifc_file.source_format,
+        "normalized_ifc_storage_key": ifc_file.normalized_ifc_storage_key,
+        "normalized_ifc_filename": ifc_file.normalized_ifc_filename,
+        "normalized_ifc_size": ifc_file.normalized_ifc_size,
+        "normalization_status": ifc_file.normalization_status,
+        "normalization_error": ifc_file.normalization_error,
+        "autodesk_activity_id": ifc_file.autodesk_activity_id,
+        "autodesk_workitem_id": ifc_file.autodesk_workitem_id,
         "schema_name": ifc_file.schema_name,
         "total_elements": ifc_file.total_elements,
         "total_assets": ifc_file.total_assets,
@@ -184,11 +193,18 @@ def import_ifc_file(
             status_code=500,
             detail={"code": "CLOUDFLARE_R2_NOT_CONFIGURED", "message": str(exc)},
         ) from exc
+    except AutodeskConfigError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "AUTODESK_NOT_CONFIGURED", "message": str(exc)},
+        ) from exc
 
     return {
         "file_id": ifc_file.id,
         "filename": ifc_file.original_filename,
         "status": ifc_file.status,
+        "source_format": ifc_file.source_format,
+        "normalization_status": ifc_file.normalization_status,
         "storage_key": ifc_file.storage_key,
         "bucket_name": ifc_file.bucket_name,
         "celery_task_id": task.id,

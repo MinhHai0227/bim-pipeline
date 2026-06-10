@@ -34,6 +34,9 @@ def process_uploaded_ifc_file(ifc_file_id: int) -> dict:
         return {
             "status": str(ifc_file.status),
             "file_id": ifc_file.id,
+            "source_format": ifc_file.source_format,
+            "normalization_status": ifc_file.normalization_status,
+            "normalized_ifc_storage_key": ifc_file.normalized_ifc_storage_key,
             "total_elements": ifc_file.total_elements,
             "total_assets": ifc_file.total_assets,
             "total_issues": ifc_file.total_issues,
