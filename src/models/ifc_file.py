@@ -23,6 +23,7 @@ class IfcFile(Base):
         Index("ix_ifc_files_source_format", "source_format"),
         Index("ix_ifc_files_normalization_status", "normalization_status"),
         Index("ix_ifc_files_viewer_model_status", "viewer_model_status"),
+        Index("ix_ifc_files_pipeline_stage", "pipeline_stage"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -44,6 +45,9 @@ class IfcFile(Base):
     viewer_model_status: Mapped[str | None] = mapped_column(String(32))
     viewer_model_size: Mapped[int | None] = mapped_column(BigInteger)
     viewer_model_error: Mapped[str | None] = mapped_column(Text)
+    pipeline_stage: Mapped[str | None] = mapped_column(String(64))
+    pipeline_progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pipeline_message: Mapped[str | None] = mapped_column(Text)
     status: Mapped[IfcFileStatus] = mapped_column(
         Enum(
             IfcFileStatus,

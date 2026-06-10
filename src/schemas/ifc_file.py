@@ -30,6 +30,9 @@ class IfcFileResponse(BaseModel):
     viewer_model_format: str | None
     viewer_model_size: int | None
     viewer_model_error: str | None
+    pipeline_stage: str | None
+    pipeline_progress: int
+    pipeline_message: str | None
     created_at: datetime
     updated_at: datetime
 

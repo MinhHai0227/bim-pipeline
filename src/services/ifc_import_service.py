@@ -31,6 +31,8 @@ from src.models.validation_issue import ValidationIssue
 
 
 class IfcImportService:
+    IMPORT_BATCH_SIZE = 500
+
     def __init__(
         self,
         db: Session,
@@ -42,6 +44,23 @@ class IfcImportService:
     @property
     def max_size_bytes(self) -> int:
         return settings.max_ifc_upload_size_mb * 1024 * 1024
+
+    def set_pipeline_stage(
+        self,
+        ifc_file: IfcFile,
+        stage: str,
+        progress: int,
+        message: str | None = None,
+        status: IfcFileStatus | None = None,
+    ) -> None:
+        if status is not None:
+            ifc_file.status = status
+
+        ifc_file.pipeline_stage = stage
+        ifc_file.pipeline_progress = max(0, min(progress, 100))
+        ifc_file.pipeline_message = message
+        self.db.add(ifc_file)
+        self.db.flush()
 
     def upload_file_for_background(self, upload: UploadFile) -> IfcFile:
         safe_filename, source_format = validate_model_filename(upload.filename)
@@ -76,6 +95,9 @@ class IfcImportService:
                 normalization_status="ready" if source_format == "ifc" else "pending",
                 status=IfcFileStatus.UPLOADED,
                 viewer_model_status="pending",
+                pipeline_stage="uploaded",
+                pipeline_progress=0,
+                pipeline_message="Model uploaded and queued for processing.",
             )
             self.db.add(ifc_file)
             self.db.commit()
@@ -124,13 +146,17 @@ class IfcImportService:
 
         return tmp_path
 
-    def _process_ifc_file(self, ifc_file: IfcFile, tmp_path: Path) -> None:
-        ifc_file.status = IfcFileStatus.PROCESSING
+    def extract_existing_ifc(self, ifc_file: IfcFile, tmp_path: Path) -> None:
         ifc_file.error_message = None
         ifc_file.viewer_model_status = "pending"
         ifc_file.viewer_model_error = None
-        self.db.add(ifc_file)
-        self.db.flush()
+        self.set_pipeline_stage(
+            ifc_file,
+            stage="extracting",
+            progress=40,
+            message="Extracting IFC elements and asset data.",
+            status=IfcFileStatus.PROCESSING,
+        )
         self._clear_previous_import_data(ifc_file.id)
 
         extractor = IFCExtractor(tmp_path)
@@ -141,26 +167,60 @@ class IfcImportService:
         total_issues = 0
         seen_global_ids: set[str] = set()
         seen_asset_codes: set[str] = set()
+        pending_elements: list[IfcElement] = []
+        pending_assets: list[tuple[IfcElement, dict, list[dict], list[dict]]] = []
+
+        def flush_import_batch() -> None:
+            nonlocal total_assets, total_issues
+
+            if not pending_elements:
+                return
+
+            self.db.add_all(pending_elements)
+            self.db.flush()
+
+            assets_for_issues: list[tuple[Asset, IfcElement, dict, list[dict]]] = []
+            for ifc_element, asset_data, cleaning_log, issues in pending_assets:
+                asset = self._create_asset(
+                    ifc_file.id,
+                    ifc_element.id,
+                    asset_data,
+                    cleaning_log,
+                )
+                self.db.add(asset)
+                assets_for_issues.append((asset, ifc_element, asset_data, issues))
+
+            if assets_for_issues:
+                self.db.flush()
+
+            for asset, ifc_element, asset_data, issues in assets_for_issues:
+                total_issues += self._create_validation_issues(
+                    ifc_file.id,
+                    asset.id,
+                    ifc_element.id,
+                    asset_data,
+                    issues,
+                )
+
+            total_assets += len(assets_for_issues)
+            pending_elements.clear()
+            pending_assets.clear()
 
         for element in extractor.iter_products():
             total_elements += 1
             asset_data = extractor.extract_element(element)
 
             ifc_element = self._create_ifc_element(ifc_file.id, asset_data)
-            self.db.add(ifc_element)
-            self.db.flush()
+            pending_elements.append(ifc_element)
 
             if not is_operational_asset(element, asset_data["raw_properties"]):
+                if len(pending_elements) >= self.IMPORT_BATCH_SIZE:
+                    flush_import_batch()
                 continue
 
             self._normalize_asset_data(asset_data)
             cleaning_log = clean_asset_data(asset_data)
             issues = validate_asset_data(asset_data)
-
-            asset = self._create_asset(ifc_file.id, ifc_element.id, asset_data, cleaning_log)
-            self.db.add(asset)
-            self.db.flush()
-            total_assets += 1
 
             global_id = asset_data.get("global_id")
             if global_id:
@@ -190,31 +250,46 @@ class IfcImportService:
                     )
                 seen_asset_codes.add(asset_code)
 
-            total_issues += self._create_validation_issues(
-                ifc_file.id,
-                asset.id,
-                ifc_element.id,
-                asset_data,
-                issues,
-            )
+            pending_assets.append((ifc_element, asset_data, cleaning_log, issues))
+            if len(pending_elements) >= self.IMPORT_BATCH_SIZE:
+                flush_import_batch()
+
+        flush_import_batch()
 
         ifc_file.total_elements = total_elements
         ifc_file.total_assets = total_assets
         ifc_file.total_issues = total_issues
-        ifc_file.status = IfcFileStatus.PROCESSED
-        self._convert_and_upload_viewer_model(ifc_file, tmp_path)
+        self.set_pipeline_stage(
+            ifc_file,
+            stage="extracted",
+            progress=75,
+            message=(
+                f"Extracted {total_elements} elements, "
+                f"{total_assets} assets, and {total_issues} validation issues."
+            ),
+            status=IfcFileStatus.PROCESSING,
+        )
 
     def process_existing_file(self, ifc_file: IfcFile, tmp_path: Path) -> None:
         normalized_tmp_path: Path | None = None
         try:
-            normalized_tmp_path = self._normalize_existing_file(ifc_file, tmp_path)
-            self._process_ifc_file(ifc_file, normalized_tmp_path)
+            normalized_tmp_path = self.normalize_existing_file(ifc_file, tmp_path)
+            self.extract_existing_ifc(ifc_file, normalized_tmp_path)
+            self.convert_existing_viewer_model(ifc_file, normalized_tmp_path, suppress_errors=True)
+            self.finalize_processed(ifc_file)
         finally:
             if normalized_tmp_path is not None and normalized_tmp_path != tmp_path:
                 normalized_tmp_path.unlink(missing_ok=True)
 
-    def _normalize_existing_file(self, ifc_file: IfcFile, tmp_path: Path) -> Path:
+    def normalize_existing_file(self, ifc_file: IfcFile, tmp_path: Path) -> Path:
         source_format = (ifc_file.source_format or tmp_path.suffix.lstrip(".")).lower()
+        self.set_pipeline_stage(
+            ifc_file,
+            stage="normalizing",
+            progress=15,
+            message=f"Preparing {source_format.upper()} model for IFC extraction.",
+            status=IfcFileStatus.PROCESSING,
+        )
 
         if source_format == "ifc":
             ifc_file.normalized_ifc_storage_key = (
@@ -226,12 +301,25 @@ class IfcImportService:
             ifc_file.normalized_ifc_size = ifc_file.normalized_ifc_size or tmp_path.stat().st_size
             ifc_file.normalization_status = "ready"
             ifc_file.normalization_error = None
-            self.db.add(ifc_file)
-            self.db.flush()
+            self.set_pipeline_stage(
+                ifc_file,
+                stage="normalized",
+                progress=35,
+                message="IFC file is ready for extraction.",
+                status=IfcFileStatus.PROCESSING,
+            )
             return tmp_path
 
         if source_format == "rvt":
-            return self._export_rvt_to_ifc(ifc_file, tmp_path)
+            normalized_tmp_path = self._export_rvt_to_ifc(ifc_file, tmp_path)
+            self.set_pipeline_stage(
+                ifc_file,
+                stage="normalized",
+                progress=35,
+                message="RVT model exported to IFC and uploaded.",
+                status=IfcFileStatus.PROCESSING,
+            )
+            return normalized_tmp_path
 
         raise IfcFileValidationError(
             "FILE_EXTENSION_INVALID",
@@ -239,12 +327,16 @@ class IfcImportService:
         )
 
     def _export_rvt_to_ifc(self, ifc_file: IfcFile, tmp_path: Path) -> Path:
-        ifc_file.status = IfcFileStatus.PROCESSING
         ifc_file.normalization_status = "converting"
         ifc_file.normalization_error = None
         ifc_file.autodesk_activity_id = "model_derivative:rvt_to_ifc"
-        self.db.add(ifc_file)
-        self.db.flush()
+        self.set_pipeline_stage(
+            ifc_file,
+            stage="normalizing",
+            progress=20,
+            message="Exporting RVT model to IFC through Autodesk Model Derivative.",
+            status=IfcFileStatus.PROCESSING,
+        )
 
         output_filename = f"{Path(ifc_file.original_filename).stem}-{uuid4().hex}.ifc"
         output_key = self.storage.build_key(
@@ -414,20 +506,35 @@ class IfcImportService:
 
         return len(issues)
 
-    def _convert_and_upload_viewer_model(self, ifc_file: IfcFile, tmp_path: Path) -> None:
+    def convert_existing_viewer_model(
+        self,
+        ifc_file: IfcFile,
+        tmp_path: Path,
+        suppress_errors: bool = False,
+    ) -> None:
         if not settings.fragment_worker_url:
             ifc_file.viewer_model_status = "skipped"
             ifc_file.viewer_model_error = "FRAGMENT_WORKER_URL is not configured."
+            self.set_pipeline_stage(
+                ifc_file,
+                stage="viewer_skipped",
+                progress=95,
+                message="Viewer conversion skipped because FRAGMENT_WORKER_URL is not configured.",
+                status=IfcFileStatus.PROCESSING,
+            )
             return
 
         frag_path = tmp_path.parent / f"{tmp_path.stem}-{uuid4().hex}.frag"
-        ifc_file.viewer_model_status = "converting"
         ifc_file.viewer_model_format = "frag"
-        ifc_file.viewer_model_key = None
-        ifc_file.viewer_model_size = None
         ifc_file.viewer_model_error = None
-        self.db.add(ifc_file)
-        self.db.flush()
+        ifc_file.viewer_model_status = "converting"
+        self.set_pipeline_stage(
+            ifc_file,
+            stage="viewer_converting",
+            progress=80,
+            message="Converting IFC to viewer fragment model.",
+            status=IfcFileStatus.PROCESSING,
+        )
 
         try:
             FragmentWorkerClient().convert_ifc_to_frag(tmp_path, frag_path)
@@ -448,11 +555,36 @@ class IfcImportService:
             ifc_file.viewer_model_size = frag_path.stat().st_size
             ifc_file.viewer_model_status = "ready"
             ifc_file.viewer_model_error = None
+            self.set_pipeline_stage(
+                ifc_file,
+                stage="viewer_ready",
+                progress=95,
+                message="Viewer fragment model is ready.",
+                status=IfcFileStatus.PROCESSING,
+            )
         except Exception as exc:
             ifc_file.viewer_model_status = "failed"
             ifc_file.viewer_model_error = str(exc)
+            self.set_pipeline_stage(
+                ifc_file,
+                stage="viewer_failed",
+                progress=95,
+                message=str(exc),
+                status=IfcFileStatus.PROCESSING,
+            )
+            if not suppress_errors:
+                raise
         finally:
             frag_path.unlink(missing_ok=True)
+
+    def finalize_processed(self, ifc_file: IfcFile) -> None:
+        self.set_pipeline_stage(
+            ifc_file,
+            stage="processed",
+            progress=100,
+            message="BIM import pipeline completed.",
+            status=IfcFileStatus.PROCESSED,
+        )
 
     def mark_failed(self, ifc_file: IfcFile, exc: Exception) -> None:
         ifc_file.status = IfcFileStatus.FAILED
@@ -460,6 +592,9 @@ class IfcImportService:
         ifc_file.total_issues = max(ifc_file.total_issues, 1)
         ifc_file.viewer_model_status = "failed"
         ifc_file.viewer_model_error = str(exc)
+        ifc_file.pipeline_stage = "failed"
+        ifc_file.pipeline_progress = 100
+        ifc_file.pipeline_message = str(exc)
         if ifc_file.source_format == "rvt" and ifc_file.normalization_status != "ready":
             ifc_file.normalization_status = "failed"
             ifc_file.normalization_error = str(exc)

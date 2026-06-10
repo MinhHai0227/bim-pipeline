@@ -19,7 +19,11 @@ def _is_placeholder(value: Any) -> bool:
         return False
 
     normalized = value.strip().lower()
-    return normalized in PLACEHOLDER_VALUES
+    return (
+        normalized in PLACEHOLDER_VALUES
+        or "placeholder" in normalized
+        or normalized.startswith("to check")
+    )
 
 
 def _field_value(asset_data: dict, field: str) -> Any:
@@ -106,6 +110,11 @@ def _check_placeholder_values(asset_data: dict) -> list[dict]:
         "floor",
         "room",
         "system_name",
+        "asset_tag",
+        "description",
+        "equipment_location",
+        "equipment_type",
+        "functional_location",
         "manufacturer",
         "model",
         "serial_number",
@@ -153,27 +162,76 @@ def _check_asset_code_source(asset_data: dict) -> list[dict]:
         _issue(
             "ASSET_CODE_FALLBACK_GLOBAL_ID",
             "asset_code",
-            "Asset code is temporarily using GlobalId and should be standardized.",
+            "Asset code is using IFC GlobalId; Digital Twin handover requires a stable asset_id/asset code.",
         )
     ]
 
 
 def _check_system(asset_data: dict) -> list[dict]:
-    ifc_class = asset_data.get("ifc_class")
-    if ifc_class not in SYSTEM_REQUIRED_IFC_CLASSES:
-        return []
-
     if _is_blank(_field_value(asset_data, "system_name")):
+        ifc_class = asset_data.get("ifc_class")
+        severity = (
+            ValidationSeverity.ERROR
+            if ifc_class in SYSTEM_REQUIRED_IFC_CLASSES
+            else ValidationSeverity.WARNING
+        )
         return [
             _issue(
                 "MISSING_SYSTEM",
                 "system_name",
-                "System asset is missing system name.",
-                ValidationSeverity.ERROR,
+                "Digital Twin asset is missing system name.",
+                severity,
             )
         ]
 
     return []
+
+
+def _check_handover_identifiers(asset_data: dict) -> list[dict]:
+    issues = []
+    asset_code = _field_value(asset_data, "asset_code")
+    global_id = _field_value(asset_data, "global_id")
+
+    if isinstance(asset_code, str) and isinstance(global_id, str):
+        if asset_code.strip() == global_id.strip():
+            issues.append(
+                _issue(
+                    "ASSET_CODE_EQUALS_IFC_GUID",
+                    "asset_code",
+                    "Asset ID should not be identical to IFC GlobalId in the handover package.",
+                )
+            )
+
+    if not _is_blank(global_id) and not isinstance(global_id, str):
+        issues.append(
+            _issue(
+                "INVALID_GLOBAL_ID",
+                "global_id",
+                "IFC GlobalId must be a text identifier.",
+                ValidationSeverity.ERROR,
+            )
+        )
+
+    return issues
+
+
+def _check_handover_review_placeholders(asset_data: dict) -> list[dict]:
+    issues = []
+    properties = asset_data.get("properties")
+    if not isinstance(properties, Mapping):
+        return issues
+
+    for field, value in properties.items():
+        if _is_placeholder(value):
+            issues.append(
+                _issue(
+                    "HANDOVER_PLACEHOLDER_VALUE",
+                    str(field),
+                    "Digital Twin handover field contains placeholder/review value.",
+                )
+            )
+
+    return issues
 
 
 def _check_maintenance_fields(asset_data: dict) -> list[dict]:
@@ -227,9 +285,11 @@ def validate_asset_data(asset_data: dict) -> list[dict]:
     issues.extend(_check_required_fields(asset_data))
     issues.extend(_check_placeholder_values(asset_data))
     issues.extend(_check_operational_name(asset_data))
+    issues.extend(_check_handover_identifiers(asset_data))
     issues.extend(_check_asset_code_source(asset_data))
     issues.extend(_check_system(asset_data))
     issues.extend(_check_maintenance_fields(asset_data))
     issues.extend(_check_status(asset_data))
+    issues.extend(_check_handover_review_placeholders(asset_data))
 
     return issues

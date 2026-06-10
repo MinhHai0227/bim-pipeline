@@ -21,7 +21,7 @@ from src.schemas.ifc_import import IfcImportQueuedResponse
 from src.schemas.ifc_viewer_model import IfcViewerModelResponse
 from src.schemas.validation_issue import ValidationIssueListResponse, ValidationSummaryResponse
 from src.services.ifc_import_service import IfcImportService
-from src.tasks.ifc_import_tasks import process_uploaded_ifc_file
+from src.tasks.ifc_import_tasks import enqueue_ifc_import_pipeline
 
 
 router = APIRouter(prefix="/ifc", tags=["ifc"])
@@ -115,6 +115,9 @@ def _file_response(ifc_file: IfcFile) -> dict:
         "viewer_model_format": ifc_file.viewer_model_format,
         "viewer_model_size": ifc_file.viewer_model_size,
         "viewer_model_error": ifc_file.viewer_model_error,
+        "pipeline_stage": ifc_file.pipeline_stage,
+        "pipeline_progress": ifc_file.pipeline_progress,
+        "pipeline_message": ifc_file.pipeline_message,
         "created_at": ifc_file.created_at,
         "updated_at": ifc_file.updated_at,
     }
@@ -178,7 +181,7 @@ def import_ifc_file(
 
     try:
         ifc_file = service.upload_file_for_background(file)
-        task = process_uploaded_ifc_file.delay(ifc_file.id)
+        task = enqueue_ifc_import_pipeline(ifc_file.id)
     except IfcFileValidationError as exc:
         raise HTTPException(
             status_code=400,
@@ -205,6 +208,9 @@ def import_ifc_file(
         "status": ifc_file.status,
         "source_format": ifc_file.source_format,
         "normalization_status": ifc_file.normalization_status,
+        "pipeline_stage": ifc_file.pipeline_stage,
+        "pipeline_progress": ifc_file.pipeline_progress,
+        "pipeline_message": ifc_file.pipeline_message,
         "storage_key": ifc_file.storage_key,
         "bucket_name": ifc_file.bucket_name,
         "celery_task_id": task.id,
@@ -369,6 +375,17 @@ def list_digital_twin_assets(
 @router.delete("/files/{file_id}", response_model=IfcFileDeleteResponse)
 def delete_ifc_file(file_id: int, db: Session = Depends(get_db)):
     ifc_file = _ensure_ifc_file(db, file_id)
+    if ifc_file.status == IfcFileStatus.PROCESSING:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "IFC_FILE_PROCESSING",
+                "message": "IFC file is still processing and cannot be deleted.",
+                "pipeline_stage": ifc_file.pipeline_stage,
+                "pipeline_progress": ifc_file.pipeline_progress,
+            },
+        )
+
     deleted_file_id = ifc_file.id
     deleted_filename = ifc_file.original_filename
     service = IfcImportService(db)

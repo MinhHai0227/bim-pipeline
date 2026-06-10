@@ -8,6 +8,17 @@ const PORT = Number.parseInt(process.env.PORT || "8090", 10);
 const WORK_DIR = path.resolve(process.env.FRAGMENT_WORK_DIR || "/tmp/bim-pipeline/ifc");
 const DEFAULT_WASM_PATH = "/app/node_modules/web-ifc";
 const WEB_IFC_WASM_PATH = process.env.WEB_IFC_WASM_PATH || DEFAULT_WASM_PATH;
+const MAX_CONCURRENT_CONVERSIONS = Math.max(
+  1,
+  Number.parseInt(process.env.FRAGMENT_WORKER_CONCURRENCY || "1", 10),
+);
+const MAX_QUEUED_CONVERSIONS = Math.max(
+  0,
+  Number.parseInt(process.env.FRAGMENT_WORKER_QUEUE_LIMIT || "20", 10),
+);
+
+let activeConversions = 0;
+const conversionQueue = [];
 
 function jsonResponse(res, statusCode, payload) {
   const body = JSON.stringify(payload);
@@ -67,6 +78,33 @@ function toBuffer(bytes) {
   throw new Error("Unsupported fragment output type.");
 }
 
+function acquireConversionSlot() {
+  if (activeConversions < MAX_CONCURRENT_CONVERSIONS) {
+    activeConversions += 1;
+    return Promise.resolve(releaseConversionSlot);
+  }
+
+  if (conversionQueue.length >= MAX_QUEUED_CONVERSIONS) {
+    const error = new Error("Fragment conversion queue is full.");
+    error.statusCode = 429;
+    return Promise.reject(error);
+  }
+
+  return new Promise((resolve) => {
+    conversionQueue.push(resolve);
+  });
+}
+
+function releaseConversionSlot() {
+  const nextResolve = conversionQueue.shift();
+  if (nextResolve) {
+    nextResolve(releaseConversionSlot);
+    return;
+  }
+
+  activeConversions = Math.max(activeConversions - 1, 0);
+}
+
 async function convertIfcToFragments(inputPath, outputPath) {
   const start = Date.now();
   const ifcBuffer = await readFile(inputPath);
@@ -96,19 +134,25 @@ async function convertIfcToFragments(inputPath, outputPath) {
 }
 
 async function handleConvert(req, res) {
+  let releaseSlot;
   try {
     const body = await readJsonBody(req);
     const inputPath = resolveInsideWorkDir(body.inputPath);
     const outputPath = resolveInsideWorkDir(body.outputPath);
 
     await stat(inputPath);
+    releaseSlot = await acquireConversionSlot();
     const result = await convertIfcToFragments(inputPath, outputPath);
     jsonResponse(res, 200, { status: "ok", ...result });
   } catch (error) {
-    jsonResponse(res, 500, {
+    jsonResponse(res, error.statusCode || 500, {
       status: "error",
       message: error.message,
     });
+  } finally {
+    if (releaseSlot) {
+      releaseSlot();
+    }
   }
 }
 
@@ -119,6 +163,10 @@ const server = http.createServer(async (req, res) => {
       service: "fragment-worker",
       workDir: WORK_DIR,
       wasmPath: WEB_IFC_WASM_PATH,
+      activeConversions,
+      queuedConversions: conversionQueue.length,
+      maxConcurrentConversions: MAX_CONCURRENT_CONVERSIONS,
+      maxQueuedConversions: MAX_QUEUED_CONVERSIONS,
     });
     return;
   }

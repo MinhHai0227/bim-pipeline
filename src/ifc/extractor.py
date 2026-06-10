@@ -27,15 +27,98 @@ def _get_express_id(element) -> int | None:
         return None
 
 
+def _normalized_property_name(name: str) -> str:
+    return "".join(char.lower() for char in name if char.isalnum())
+
+
 class IFCExtractor:
+    DIGITAL_TWIN_PSET_NAMES = [
+        "DT.Common",
+        "DT.HVAC",
+        "DT.LV",
+        "DT.HV",
+        "DT.EMG",
+        "DT.Boiler",
+        "DT.FS",
+        "DT.UPS",
+        "DT.Lighting",
+        "DT.CCTV",
+        "DT.IoT",
+        "DT.MedicalGas",
+        "DT.Plumbing",
+        "DT.Drainage",
+        "DT.LIFT",
+        "DT.EL",
+        "DT.Filtration",
+        "DT.Security",
+    ]
+
     PROPERTY_ALIASES = {
-        "asset_identifier": ["AssetIdentifier", "Asset ID", "AssetId", "AssetTag"],
-        "manufacturer": ["Manufacturer", "ManufacturerName"],
-        "model": ["ModelReference", "Model", "ModelNumber", "Type Mark"],
-        "reference": ["Reference", "Type Mark", "Mark"],
-        "serial_number": ["SerialNumber", "Serial Number", "Serial No.", "Serial"],
-        "status": ["Status", "Phase Created"],
-        "system_name": ["System", "SystemName", "System Name"],
+        "asset_identifier": [
+            "AssetIdentifier",
+            "Asset ID",
+            "AssetId",
+            "AssetTag",
+            "Asset Code",
+            "DT.Common.Asset Code",
+        ],
+        "asset_tag": [
+            "Asset Tag",
+            "Asset Tag No.",
+            "Tag No.",
+            "DT.Common.Asset Tag No.",
+            "DT.Common.Zone Tag No.",
+        ],
+        "description": [
+            "Description",
+            "Equipment Description",
+            "DT.Common.Equipment Description",
+        ],
+        "equipment_location": [
+            "Equipment Location",
+            "Functional Location",
+            "DT.HVAC.Equipment Location",
+            "DT.Common.Functional Location",
+        ],
+        "equipment_type": [
+            "Equipment Type",
+            "Asset Type",
+            "DT.HVAC.Equipment Type",
+        ],
+        "functional_location": [
+            "Functional Location",
+            "DT.Common.Functional Location",
+        ],
+        "manufacturer": [
+            "Manufacturer",
+            "ManufacturerName",
+            "DT.Common.Manufacturer",
+        ],
+        "model": [
+            "ModelReference",
+            "Model",
+            "ModelNumber",
+            "Model No.",
+            "Type Mark",
+            "DT.Common.Model No.",
+        ],
+        "reference": ["Reference", "Type Mark", "Mark", "DT.Common.Grouped Equipment ID"],
+        "serial_number": [
+            "SerialNumber",
+            "Serial Number",
+            "Serial No.",
+            "Serial",
+            "DT.Common.Serial Number",
+        ],
+        "status": ["Status", "Phase Created", "Asset Status", "DT.Common.Asset Status"],
+        "system_name": [
+            "System",
+            "SystemName",
+            "System Name",
+            "Discipline",
+            "DT.Common.System",
+            "DT.Common.Functional Location",
+        ],
     }
 
     QUANTITY_ALIASES = {
@@ -145,6 +228,19 @@ class IFCExtractor:
 
         return True
 
+    def get_pset_value(self, pset: dict, name: str):
+        value = pset.get(name)
+        if self.is_meaningful_value(name, value):
+            return value
+
+        normalized_name = _normalized_property_name(name)
+        for key, candidate in pset.items():
+            if _normalized_property_name(str(key)) == normalized_name:
+                if self.is_meaningful_value(str(key), candidate):
+                    return candidate
+
+        return None
+
     def get_first_value(
         self,
         psets: dict,
@@ -153,8 +249,8 @@ class IFCExtractor:
     ):
         for pset in self.iter_psets(psets, preferred_pset_names):
             for name in names:
-                value = pset.get(name)
-                if self.is_meaningful_value(name, value):
+                value = self.get_pset_value(pset, name)
+                if value is not None:
                     return _jsonable(value)
 
         return None
@@ -167,14 +263,17 @@ class IFCExtractor:
     ):
         for pset in self.iter_psets(psets, preferred_pset_names):
             for name in names:
-                value = pset.get(name)
+                value = self.get_pset_value(pset, name)
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                     return value
 
         return None
 
     def extract_custom_properties(self, element, raw_properties: dict) -> dict:
-        preferred_psets = [self.get_standard_common_pset_name(element)]
+        preferred_psets = [
+            self.get_standard_common_pset_name(element),
+            *self.DIGITAL_TWIN_PSET_NAMES,
+        ]
 
         return {
             field: self.get_first_value(raw_properties, aliases, preferred_psets)

@@ -199,22 +199,25 @@ class AutodeskModelDerivativeClient:
         return self._request_json("GET", url)
 
     def upload_to_signed_url(self, signed_url: str, input_path: str | Path) -> None:
-        data = Path(input_path).read_bytes()
-        request = urllib.request.Request(
-            signed_url,
-            data=data,
-            method="PUT",
-            headers={
-                "Content-Type": "application/octet-stream",
-            },
-        )
+        source_path = Path(input_path)
+        file_size = source_path.stat().st_size
 
         try:
-            with urllib.request.urlopen(
-                request,
-                timeout=settings.autodesk_upload_timeout_seconds,
-            ) as response:
-                response.read()
+            with source_path.open("rb") as fileobj:
+                request = urllib.request.Request(
+                    signed_url,
+                    data=fileobj,
+                    method="PUT",
+                    headers={
+                        "Content-Type": "application/octet-stream",
+                        "Content-Length": str(file_size),
+                    },
+                )
+                with urllib.request.urlopen(
+                    request,
+                    timeout=settings.autodesk_upload_timeout_seconds,
+                ) as response:
+                    response.read()
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             raise AutodeskAPIError(

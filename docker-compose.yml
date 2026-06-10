@@ -139,6 +139,8 @@ services:
       PORT: 8090
       FRAGMENT_WORK_DIR: /tmp/bim-pipeline/ifc
       WEB_IFC_WASM_PATH: /app/node_modules/web-ifc
+      FRAGMENT_WORKER_CONCURRENCY: ${FRAGMENT_WORKER_CONCURRENCY:-1}
+      FRAGMENT_WORKER_QUEUE_LIMIT: ${FRAGMENT_WORKER_QUEUE_LIMIT:-20}
     ports:
       - "${FRAGMENT_WORKER_PORT:-8090}:8090"
     volumes:

@@ -1,0 +1,98 @@
+# This is a Revit shared parameter file.
+# Do not edit manually.
+*META	VERSION	MINVERSION
+META	2	1
+*GROUP	ID	NAME
+GROUP	1	DT.Common
+GROUP	2	DT.HVAC
+GROUP	3	DT.LV
+GROUP	4	DT.HV
+GROUP	5	DT.EMG
+GROUP	6	DT.Boiler
+GROUP	7	DT.FS
+GROUP	8	DT.UPS
+GROUP	9	DT.Lighting
+GROUP	10	DT.CCTV
+GROUP	11	DT.IoT
+GROUP	12	DT.MedicalGas
+GROUP	13	DT.Plumbing
+GROUP	14	DT.Drainage
+GROUP	15	DT.LIFT
+GROUP	16	DT.EL
+GROUP	17	DT.Filtration
+GROUP	18	DT.Security
+GROUP	19	DT.WLDS
+GROUP	20	DT.MHL
+*PARAM	GUID	NAME	DATATYPE	DATACATEGORY	GROUP	VISIBLE	DESCRIPTION	USERMODIFIABLE	HIDEWHENNOVALUE
+PARAM	bdd640fb-0667-1ad1-1c80-317fa3b1799d	DT.Common.Asset Code	TEXT		1	1		1	0
+PARAM	23b8c1e9-3924-56de-3eb1-3b9046685257	DT.Common.Functional Location	TEXT		1	1		1	0
+PARAM	bd9c66b3-ad3c-2d6d-1a3d-1fa7bc8960a9	DT.Common.Asset Relationship	TEXT		1	1		1	0
+PARAM	972a8469-1641-9f82-8b9d-2434e465e150	DT.Common.Grouped Equipment ID	TEXT		1	1		1	0
+PARAM	17fc695a-07a0-ca6e-0822-e8f36c031199	DT.Common.Asset Tag No.	TEXT		1	1		1	0
+PARAM	9a1de644-815e-f6d1-3b8f-aa1837f8a88b	DT.Common.Zone Tag No.	TEXT		1	1		1	0
+PARAM	b74d0fb1-32e7-0629-8fad-c1a606cb0fb3	DT.Common.Documentation	URL		1	1		1	0
+PARAM	6b65a6a4-8b81-48f6-b38a-088ca65ed389	DT.Common.Equipment Description	TEXT		1	1		1	0
+PARAM	47378190-96da-1dac-72ff-5d2a386ecbe0	DT.Common.Manufacturer	TEXT		1	1		1	0
+PARAM	c241330b-01a9-e71f-de8a-774bcf36d58b	DT.Common.Model No.	TEXT		1	1		1	0
+PARAM	6c307511-b2b9-437a-28df-6ec4ce4a2bbd	DT.Common.Photo	URL		1	1		1	0
+PARAM	371ecd7b-27cd-8130-4722-9389571aa876	DT.Common.Start-up Date	TEXT		1	1		1	0
+PARAM	1a2a73ed-562b-0f79-c374-59eef50bea63	DT.HVAC.Equipment Location	TEXT		2	1		1	0
+PARAM	5be6128e-18c2-6797-6142-ea7d17be3111	DT.HVAC.Equipment Type	TEXT		2	1		1	0
+PARAM	43b7a3a6-9a8d-ca03-580d-7b71d8f56413	DT.HVAC.Air Flow	NUMBER		2	1		1	0
+PARAM	759cde66-bacf-b3d0-0b1f-9163ce9ff57f	DT.HVAC.Cooling Capacity	NUMBER		2	1		1	0
+PARAM	ec1b8ca1-f91e-1d4c-1ff4-9b7889463e85	DT.HVAC.Rated Power Input	NUMBER		2	1		1	0
+PARAM	4b0dbb41-8d52-88f1-142c-3fe860e7a113	DT.HVAC.COP	NUMBER		2	1		1	0
+PARAM	e2acf72f-9e57-4f7a-a0ee-89aed453dd32	DT.HVAC.Refrigerant Type	TEXT		2	1		1	0
+PARAM	3139d32c-93cd-59bf-5c94-1cf0dc98d2c1	DT.HVAC.VSD	YESNO		2	1		1	0
+PARAM	a9488d99-0bbb-2599-11ce-5dd2b45ed1f0	DT.LV.Rated Current	NUMBER		3	1		1	0
+PARAM	fc377a4c-4a15-544d-c5e7-ce8a3a578a8e	DT.LV.Breaking Capacity	NUMBER		3	1		1	0
+PARAM	ddd1dfb2-3b98-2ef8-daf6-1a26146d3f31	DT.LV.Rated Voltage	NUMBER		3	1		1	0
+PARAM	7412b293-4729-4739-614f-f3d719db3ad0	DT.LV.Poles	INTEGER		3	1		1	0
+PARAM	29a3b2e9-5d65-a441-d588-42dea2bc372f	DT.HV.Rated Voltage	NUMBER		4	1		1	0
+PARAM	ab9099a4-35a2-40ae-5af3-05535ec42e08	DT.HV.Rated Current	NUMBER		4	1		1	0
+PARAM	aefcfad8-efc8-9849-b3aa-7efe4458a885	DT.HV.Breaking Capacity	NUMBER		4	1		1	0
+PARAM	a28defe3-9bf0-0273-1247-6f57a5e5a5ab	DT.EMG.Rated Power	NUMBER		5	1		1	0
+PARAM	3eabedcb-baa8-0dd4-88bd-64072bcfbe01	DT.EMG.Fuel Type	TEXT		5	1		1	0
+PARAM	451b4cf3-6123-fdf7-7656-af7229d4beef	DT.EMG.Fuel Tank Capacity	NUMBER		5	1		1	0
+PARAM	b02b61c4-a3d7-0628-ece6-6fa2fd5166e6	DT.Boiler.Heating Capacity	NUMBER		6	1		1	0
+PARAM	5304317f-af42-e12f-3838-b3268e944239	DT.Boiler.Working Pressure	NUMBER		6	1		1	0
+PARAM	0e51f30d-c6a7-ee39-c4b0-32ccd7c524a5	DT.Boiler.Fuel Type	TEXT		6	1		1	0
+PARAM	ce177b4e-0837-b8a3-d261-a7ab3aa2e4f9	DT.Boiler.Efficiency	NUMBER		6	1		1	0
+PARAM	10f1bc81-448a-aa9e-66b2-bc5b50c187fc	DT.FS.Flow Rate	NUMBER		7	1		1	0
+PARAM	9132b63e-f162-87e4-e9c3-49e03602f8ac	DT.FS.Head	NUMBER		7	1		1	0
+PARAM	366eb16f-508e-bad7-b7c9-3acfe059a0ee	DT.FS.Driver Type	TEXT		7	1		1	0
+PARAM	e27a984d-6548-21d0-7fcd-9eb1a7cad415	DT.UPS.Rated Power	NUMBER		8	1		1	0
+PARAM	24933b83-7577-50a9-a491-f0b2ea1fca65	DT.UPS.Backup Time	NUMBER		8	1		1	0
+PARAM	beb79919-3f22-faf8-23be-d01d43cf2fde	DT.UPS.Battery Type	TEXT		8	1		1	0
+PARAM	bf3c4c06-4343-08bc-89fa-6a688fb5d27b	DT.Lighting.Luminous Flux	NUMBER		9	1		1	0
+PARAM	956269f0-e5d7-b875-6dad-d6c795a76d79	DT.Lighting.Rated Power	NUMBER		9	1		1	0
+PARAM	ff50bde4-3825-67b8-5cab-cc97663f1c97	DT.Lighting.Colour Temperature	NUMBER		9	1		1	0
+PARAM	7e570ddf-8270-50a8-2369-b584ff5e9ff0	DT.Lighting.IP Rating	TEXT		9	1		1	0
+PARAM	dc713d96-0c0f-d195-c17a-f08a1745d6d8	DT.CCTV.Resolution	TEXT		10	1		1	0
+PARAM	28f49481-a0a0-4dc4-2720-9bdf1c11f735	DT.CCTV.Type	TEXT		10	1		1	0
+PARAM	98ae4334-6c12-ace8-ae34-0454cac5b68c	DT.CCTV.IP Rating	TEXT		10	1		1	0
+PARAM	988c24c9-61b1-cd22-6280-1c4510435a10	DT.IoT.Sensor Type	TEXT		11	1		1	0
+PARAM	405cacec-8774-09a9-77d2-1e02ff01cf99	DT.IoT.Communication Protocol	TEXT		11	1		1	0
+PARAM	f143262f-dc5c-0eed-8da0-365bf89897b9	DT.IoT.Power Source	TEXT		11	1		1	0
+PARAM	1d53434b-b881-39b9-ae27-0da702f06b90	DT.MedicalGas.Gas Type	TEXT		12	1		1	0
+PARAM	c0398710-8976-e334-e281-7efdae849217	DT.MedicalGas.Flow Rate	NUMBER		12	1		1	0
+PARAM	5715bd6f-a416-1293-c4c2-e2e3444ea7c8	DT.MedicalGas.Pressure	NUMBER		12	1		1	0
+PARAM	287d06ca-6f4c-c69a-4b22-d3081c8eaee9	DT.Plumbing.Flow Rate	NUMBER		13	1		1	0
+PARAM	b8db0672-f42d-47cc-00d4-af5974273ca3	DT.Plumbing.Head	NUMBER		13	1		1	0
+PARAM	f8cda88b-436d-76e2-b83c-fe0be037e5ed	DT.Plumbing.Rated Power Input	NUMBER		13	1		1	0
+PARAM	81f76d1c-2dbc-2134-c30f-f46e8026695f	DT.Drainage.Flow Rate	NUMBER		14	1		1	0
+PARAM	a013ac6e-deda-4e16-1b3d-bd5ce9a1fa6f	DT.Drainage.Head	NUMBER		14	1		1	0
+PARAM	81f631d4-a392-31a7-d777-a4774c66e0a8	DT.Drainage.Rated Power Input	NUMBER		14	1		1	0
+PARAM	5fb8d16c-2720-797d-32eb-d6899be578c7	DT.LIFT.Rated Load	NUMBER		15	1		1	0
+PARAM	f4188f3f-8a14-be62-295b-4715c333e861	DT.LIFT.Rated Speed	NUMBER		15	1		1	0
+PARAM	eb2263dd-87c5-421e-ec24-a3c5c754108f	DT.LIFT.Travel Height	NUMBER		15	1		1	0
+PARAM	7d154385-52fb-e43b-9954-6eb400257ad1	DT.EL.Rated Current	NUMBER		16	1		1	0
+PARAM	5cec4eb5-edd9-6831-1ca3-5cfb04fc6d82	DT.EL.Rated Voltage	NUMBER		16	1		1	0
+PARAM	ce88cb2d-d4e8-0839-fc3e-058be0f3eab0	DT.EL.No. of Outgoing	INTEGER		16	1		1	0
+PARAM	3da9c2a9-0ed4-2f1a-3d4c-bf374eb93eff	DT.Filtration.Flow Rate	NUMBER		17	1		1	0
+PARAM	14296c07-f26b-4776-913e-4de2e0c53cb8	DT.Filtration.Capacity	NUMBER		17	1		1	0
+PARAM	d0e6e660-7c69-dee1-bb5e-4bcf15ed6269	DT.Security.Channels	INTEGER		18	1		1	0
+PARAM	885f6e66-c2b6-d2c5-fa5d-310011b7e948	DT.Security.Storage	NUMBER		18	1		1	0
+PARAM	a8e56e0c-20de-435d-2031-d750c40db9b4	DT.WLDS.Cable Length	NUMBER		19	1		1	0
+PARAM	2a45c2ab-8cbf-edb0-f264-accc79ac1b1e	DT.MHL.Rated Load	NUMBER		20	1		1	0
+PARAM	9b49bd26-df57-c59a-8715-a10343dac043	DT.MHL.Lifting Height	NUMBER		20	1		1	0

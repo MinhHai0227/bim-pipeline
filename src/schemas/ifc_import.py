@@ -9,6 +9,9 @@ class IfcImportQueuedResponse(BaseModel):
     status: IfcFileStatus
     source_format: str
     normalization_status: str | None
+    pipeline_stage: str | None
+    pipeline_progress: int
+    pipeline_message: str | None
     storage_key: str
     bucket_name: str
     celery_task_id: str

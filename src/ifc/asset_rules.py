@@ -27,9 +27,16 @@ ASSET_IFC_CLASSES = {
 }
 
 ASSET_PROPERTY_SIGNALS = {
+    "Asset Code",
     "AssetIdentifier",
     "AssetTag",
     "BarCode",
+    "DT.Common.Asset Code",
+    "DT.Common.Asset Tag No.",
+    "DT.Common.Equipment Description",
+    "DT.Common.Manufacturer",
+    "DT.Common.Model No.",
+    "DT.HVAC.Equipment Type",
     "InstallationDate",
     "Manufacturer",
     "ModelReference",
@@ -129,8 +136,8 @@ DIGITAL_TWIN_SYSTEM_BY_IFC_CLASS = {
 DIGITAL_TWIN_SYSTEM_KEYWORDS = {
     "ARCH": ("arch", "architect", "door", "window", "wall"),
     "BMS": ("automation", "bms", "control", "controller", "sensor"),
-    "EL": ("electric", "electrical", "light", "lighting", "panel", "power", "switch"),
-    "FF": ("fire", "firefighting", "pccc", "sprinkler"),
+    "EL": ("el", "electric", "electrical", "lighting", "panel", "power", "switch"),
+    "FF": ("ff", "fire", "fire fighting", "firefighting", "pccc", "sprinkler"),
     "HVAC": (
         "ahu",
         "air",
@@ -145,8 +152,8 @@ DIGITAL_TWIN_SYSTEM_KEYWORDS = {
         "ventilation",
     ),
     "LIFT": ("elevator", "lift", "transport"),
-    "PLB": ("drain", "drainage", "pipe", "plumbing", "sanitary", "water"),
-    "SEC": ("access", "camera", "cctv", "security"),
+    "PLB": ("drain", "drainage", "pipe", "plb", "plumbing", "sanitary", "water"),
+    "SEC": ("access", "camera", "cctv", "sec", "security"),
     "STR": ("beam", "column", "plate", "slab", "struct", "structure"),
 }
 
@@ -196,11 +203,21 @@ PLACEHOLDER_VALUES = {
     "--",
     "0",
     "default",
+    "generic",
+    "generic manufacturer",
+    "model-placeholder",
     "na",
     "n/a",
+    "not applicable",
+    "not available",
+    "not set",
     "none",
     "null",
+    "pending",
+    "placeholder",
     "tbd",
+    "to be checked",
+    "to check",
     "unknown",
     "undefined",
 }

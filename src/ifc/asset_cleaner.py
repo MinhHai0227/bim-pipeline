@@ -15,7 +15,12 @@ def _is_placeholder(value: Any) -> bool:
     if not isinstance(value, str):
         return False
 
-    return value.strip().lower() in PLACEHOLDER_VALUES
+    normalized = value.strip().lower()
+    return (
+        normalized in PLACEHOLDER_VALUES
+        or "placeholder" in normalized
+        or normalized.startswith("to check")
+    )
 
 
 def _clean_text(value: Any) -> Any:
@@ -96,6 +101,11 @@ def _clean_basic_fields(asset_data: dict, changes: list[dict[str, Any]]) -> None
     properties = _ensure_properties(asset_data)
     for field in (
         "asset_identifier",
+        "asset_tag",
+        "description",
+        "equipment_location",
+        "equipment_type",
+        "functional_location",
         "reference",
         "system_name",
         "manufacturer",
@@ -108,10 +118,42 @@ def _clean_basic_fields(asset_data: dict, changes: list[dict[str, Any]]) -> None
         _set_property_field(properties, changes, field, value, rule)
 
 
+def _promote_digital_twin_fields(asset_data: dict, changes: list[dict[str, Any]]) -> None:
+    properties = _ensure_properties(asset_data)
+
+    if not asset_data.get("tag") and properties.get("asset_tag"):
+        _set_asset_field(
+            asset_data,
+            changes,
+            "tag",
+            properties.get("asset_tag"),
+            "PROMOTE_DT_ASSET_TAG",
+        )
+
+    if not asset_data.get("name") and properties.get("description"):
+        _set_asset_field(
+            asset_data,
+            changes,
+            "name",
+            properties.get("description"),
+            "PROMOTE_DT_DESCRIPTION_TO_NAME",
+        )
+
+    if not asset_data.get("room") and properties.get("equipment_location"):
+        _set_asset_field(
+            asset_data,
+            changes,
+            "room",
+            properties.get("equipment_location"),
+            "PROMOTE_DT_EQUIPMENT_LOCATION",
+        )
+
+
 def _select_asset_code(asset_data: dict, changes: list[dict[str, Any]]) -> None:
     properties = _ensure_properties(asset_data)
     candidates = [
         ("asset_identifier", properties.get("asset_identifier")),
+        ("asset_tag", properties.get("asset_tag")),
         ("tag", asset_data.get("tag")),
         ("reference", properties.get("reference")),
         ("global_id", asset_data.get("global_id")),
@@ -142,7 +184,8 @@ def _select_asset_code(asset_data: dict, changes: list[dict[str, Any]]) -> None:
 
 def _normalize_asset_type(asset_data: dict, changes: list[dict[str, Any]]) -> None:
     ifc_class = asset_data.get("ifc_class")
-    asset_type = DIGITAL_TWIN_ASSET_TYPE_BY_IFC_CLASS.get(ifc_class)
+    properties = _ensure_properties(asset_data)
+    asset_type = _clean_text(properties.get("equipment_type"))
 
     if asset_type:
         _set_asset_field(
@@ -150,6 +193,17 @@ def _normalize_asset_type(asset_data: dict, changes: list[dict[str, Any]]) -> No
             changes,
             "asset_type",
             asset_type,
+            "MAP_ASSET_TYPE_FROM_DT_PARAMETER",
+        )
+        return
+
+    mapped_asset_type = DIGITAL_TWIN_ASSET_TYPE_BY_IFC_CLASS.get(ifc_class)
+    if mapped_asset_type:
+        _set_asset_field(
+            asset_data,
+            changes,
+            "asset_type",
+            mapped_asset_type,
             "MAP_ASSET_TYPE_FROM_IFC_CLASS",
         )
     elif ifc_class:
@@ -174,7 +228,7 @@ def _system_from_text(value: str | None) -> str | None:
 
 def _normalize_system(asset_data: dict, changes: list[dict[str, Any]]) -> None:
     properties = _ensure_properties(asset_data)
-    raw_system = properties.get("system_name")
+    raw_system = properties.get("system_name") or properties.get("functional_location")
     mapped_system = _system_from_text(raw_system)
     rule = "NORMALIZE_SYSTEM"
 
@@ -211,6 +265,7 @@ def clean_asset_data(asset_data: dict) -> list[dict[str, Any]]:
     changes: list[dict[str, Any]] = []
 
     _clean_basic_fields(asset_data, changes)
+    _promote_digital_twin_fields(asset_data, changes)
     _select_asset_code(asset_data, changes)
     _normalize_asset_type(asset_data, changes)
     _normalize_system(asset_data, changes)
