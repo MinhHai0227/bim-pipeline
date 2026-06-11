@@ -21,7 +21,7 @@ from src.schemas.ifc_import import IfcImportQueuedResponse
 from src.schemas.ifc_viewer_model import IfcViewerModelResponse
 from src.schemas.validation_issue import ValidationIssueListResponse, ValidationSummaryResponse
 from src.services.ifc_import_service import IfcImportService
-from src.tasks.ifc_import_tasks import enqueue_ifc_import_pipeline
+from src.tasks.ifc_import_tasks import enqueue_ifc_import_pipeline, enqueue_ifc_reprocess_pipeline
 
 
 router = APIRouter(prefix="/ifc", tags=["ifc"])
@@ -248,6 +248,50 @@ def list_ifc_files(
 @router.get("/files/{file_id}", response_model=IfcFileResponse)
 def get_ifc_file(file_id: int, db: Session = Depends(get_db)):
     return _file_response(_ensure_ifc_file(db, file_id))
+
+
+@router.post("/files/{file_id}/reprocess", response_model=IfcImportQueuedResponse)
+def reprocess_ifc_file(file_id: int, db: Session = Depends(get_db)):
+    ifc_file = _ensure_ifc_file(db, file_id)
+    if ifc_file.status == IfcFileStatus.PROCESSING:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "IFC_FILE_PROCESSING",
+                "message": "IFC file is still processing and cannot be reprocessed.",
+                "pipeline_stage": ifc_file.pipeline_stage,
+                "pipeline_progress": ifc_file.pipeline_progress,
+            },
+        )
+
+    ifc_file.error_message = None
+    ifc_file.viewer_model_status = "pending"
+    ifc_file.viewer_model_error = None
+    IfcImportService(db).set_pipeline_stage(
+        ifc_file,
+        stage="reprocess_queued",
+        progress=0,
+        message="Reprocessing model with current extraction and validation rules.",
+        status=IfcFileStatus.PROCESSING,
+    )
+    db.commit()
+    db.refresh(ifc_file)
+
+    task = enqueue_ifc_reprocess_pipeline(ifc_file.id)
+
+    return {
+        "file_id": ifc_file.id,
+        "filename": ifc_file.original_filename,
+        "status": ifc_file.status,
+        "source_format": ifc_file.source_format,
+        "normalization_status": ifc_file.normalization_status,
+        "pipeline_stage": ifc_file.pipeline_stage,
+        "pipeline_progress": ifc_file.pipeline_progress,
+        "pipeline_message": ifc_file.pipeline_message,
+        "storage_key": ifc_file.storage_key,
+        "bucket_name": ifc_file.bucket_name,
+        "celery_task_id": task.id,
+    }
 
 
 @router.get("/files/{file_id}/issues", response_model=ValidationIssueListResponse)

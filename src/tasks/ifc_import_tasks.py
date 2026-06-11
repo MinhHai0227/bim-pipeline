@@ -52,6 +52,16 @@ def enqueue_ifc_import_pipeline(ifc_file_id: int):
     ).apply_async()
 
 
+def enqueue_ifc_reprocess_pipeline(ifc_file_id: int):
+    return chain(
+        prepare_reprocess_ifc.s(ifc_file_id),
+        normalize_uploaded_model.s(),
+        extract_uploaded_ifc.s(),
+        convert_uploaded_viewer_model.s(),
+        finalize_uploaded_ifc.s(),
+    ).apply_async()
+
+
 def _tmp_path_for(ifc_file: IfcFile, prefix: str, suffix: str | None = None) -> Path:
     tmp_dir = Path(settings.tmp_ifc_dir)
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -127,6 +137,49 @@ def _mark_viewer_failed(db, ifc_file_id: int, exc: Exception) -> None:
 def process_uploaded_ifc_file(ifc_file_id: int) -> dict:
     task = enqueue_ifc_import_pipeline(ifc_file_id)
     return {"status": "queued", "file_id": ifc_file_id, "celery_task_id": task.id}
+
+
+@celery_app.task(
+    bind=True,
+    name="ifc.prepare_reprocess_ifc",
+    max_retries=1,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    soft_time_limit=FINALIZE_TIME_LIMIT_SECONDS - 30,
+    time_limit=FINALIZE_TIME_LIMIT_SECONDS,
+)
+def prepare_reprocess_ifc(self, ifc_file_id: int) -> int:
+    db = get_session_factory()()
+
+    try:
+        ifc_file = db.get(IfcFile, ifc_file_id)
+        if ifc_file is None:
+            return ifc_file_id
+        if (
+            ifc_file.status == IfcFileStatus.PROCESSING
+            and ifc_file.pipeline_stage != "reprocess_queued"
+        ):
+            raise ValueError("IFC file is already processing.")
+
+        ifc_file.error_message = None
+        ifc_file.viewer_model_status = "pending"
+        ifc_file.viewer_model_error = None
+        ifc_file.total_elements = 0
+        ifc_file.total_assets = 0
+        ifc_file.total_issues = 0
+        IfcImportService(db).set_pipeline_stage(
+            ifc_file,
+            stage="reprocess_queued",
+            progress=0,
+            message="Reprocessing model with current extraction and validation rules.",
+            status=IfcFileStatus.PROCESSING,
+        )
+        db.commit()
+        return ifc_file_id
+    except Exception as exc:
+        _retry_or_fail_pipeline(self, db, ifc_file_id, exc, "reprocessing")
+    finally:
+        db.close()
 
 
 @celery_app.task(

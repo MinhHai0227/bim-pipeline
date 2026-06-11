@@ -4,6 +4,7 @@ from typing import Any
 
 from src.ifc.asset_rules import (
     DIGITAL_TWIN_ASSET_TYPE_BY_IFC_CLASS,
+    DIGITAL_TWIN_SYSTEM_ALIASES,
     DIGITAL_TWIN_STATUS_ALIASES,
     DIGITAL_TWIN_SYSTEM_BY_IFC_CLASS,
     DIGITAL_TWIN_SYSTEM_KEYWORDS,
@@ -215,6 +216,10 @@ def _system_from_text(value: str | None) -> str | None:
         return None
 
     normalized = _normalized_lookup_text(value)
+    alias = DIGITAL_TWIN_SYSTEM_ALIASES.get(normalized)
+    if alias:
+        return alias
+
     code_candidate = normalized.upper()
     if code_candidate in DIGITAL_TWIN_SYSTEM_KEYWORDS:
         return code_candidate

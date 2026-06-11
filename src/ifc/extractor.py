@@ -85,6 +85,18 @@ class IFCExtractor:
             "Asset Type",
             "DT.HVAC.Equipment Type",
         ],
+        "floor": [
+            "Floor",
+            "Level",
+            "Base Level",
+            "Reference Level",
+            "Schedule Level",
+            "Storey",
+            "Building Storey",
+            "Home Story",
+            "DT.Common.Floor",
+            "DT.Common.Level",
+        ],
         "functional_location": [
             "Functional Location",
             "DT.Common.Functional Location",
@@ -103,6 +115,20 @@ class IFCExtractor:
             "DT.Common.Model No.",
         ],
         "reference": ["Reference", "Type Mark", "Mark", "DT.Common.Grouped Equipment ID"],
+        "room": [
+            "Room",
+            "Room Name",
+            "Room Number",
+            "Space",
+            "Space Name",
+            "Location",
+            "Equipment Location",
+            "Equipment Room",
+            "DT.Common.Room",
+            "DT.Common.Space",
+            "DT.Common.Equipment Location",
+            "DT.HVAC.Equipment Location",
+        ],
         "serial_number": [
             "SerialNumber",
             "Serial Number",
@@ -284,6 +310,9 @@ class IFCExtractor:
         floor, room = self.extract_location(element)
         raw_properties = ifcopenshell.util.element.get_psets(element, psets_only=True) or {}
         raw_quantities = ifcopenshell.util.element.get_psets(element, qtos_only=True) or {}
+        custom_properties = self.extract_custom_properties(element, raw_properties)
+        floor = floor or custom_properties.get("floor")
+        room = room or custom_properties.get("room") or custom_properties.get("equipment_location")
         quantity_source = {**raw_properties, **raw_quantities}
         quantity_psets = [name for name in raw_quantities if name.startswith("Qto_")]
 
@@ -297,7 +326,7 @@ class IFCExtractor:
             "floor": floor,
             "room": room,
             "material": _jsonable(self.extract_material(element)),
-            "properties": self.extract_custom_properties(element, raw_properties),
+            "properties": custom_properties,
             "quantities": {
                 field: self.get_first_numeric_value(quantity_source, aliases, quantity_psets)
                 for field, aliases in self.QUANTITY_ALIASES.items()

@@ -45,6 +45,32 @@ ASSET_PROPERTY_SIGNALS = {
     "WarrantyStartDate",
 }
 
+NON_OPERATIONAL_IFC_CLASSES = {
+    "IfcBeam",
+    "IfcBuildingElementPart",
+    "IfcColumn",
+    "IfcCovering",
+    "IfcCurtainWall",
+    "IfcDoor",
+    "IfcFooting",
+    "IfcFlowSegment",
+    "IfcMember",
+    "IfcPile",
+    "IfcPlate",
+    "IfcRailing",
+    "IfcRamp",
+    "IfcRampFlight",
+    "IfcReinforcingBar",
+    "IfcReinforcingMesh",
+    "IfcRoof",
+    "IfcSlab",
+    "IfcStair",
+    "IfcStairFlight",
+    "IfcWall",
+    "IfcWallStandardCase",
+    "IfcWindow",
+}
+
 SERVICEABLE_IFC_CLASSES = {
     "IfcAirTerminal",
     "IfcAirTerminalBox",
@@ -133,9 +159,30 @@ DIGITAL_TWIN_SYSTEM_BY_IFC_CLASS = {
     "IfcValve": "PLB",
 }
 
+DIGITAL_TWIN_SYSTEM_ALIASES = {
+    "access control": "SEC",
+    "automation": "BMS",
+    "bms": "BMS",
+    "camera": "CCTV",
+    "cctv": "CCTV",
+    "drainage": "PLB",
+    "el": "EL",
+    "electrical": "EL",
+    "electricity": "EL",
+    "fire": "FF",
+    "fire fighting": "FF",
+    "firefighting": "FF",
+    "hvac": "HVAC",
+    "iot": "IOT",
+    "lift": "LIFT",
+    "plumbing": "PLB",
+    "security": "SEC",
+}
+
 DIGITAL_TWIN_SYSTEM_KEYWORDS = {
     "ARCH": ("arch", "architect", "door", "window", "wall"),
     "BMS": ("automation", "bms", "control", "controller", "sensor"),
+    "CCTV": ("camera", "cctv", "vms"),
     "EL": ("el", "electric", "electrical", "lighting", "panel", "power", "switch"),
     "FF": ("ff", "fire", "fire fighting", "firefighting", "pccc", "sprinkler"),
     "HVAC": (
@@ -151,6 +198,7 @@ DIGITAL_TWIN_SYSTEM_KEYWORDS = {
         "supply",
         "ventilation",
     ),
+    "IOT": ("iot", "gateway", "mqtt", "telemetry"),
     "LIFT": ("elevator", "lift", "transport"),
     "PLB": ("drain", "drainage", "pipe", "plb", "plumbing", "sanitary", "water"),
     "SEC": ("access", "camera", "cctv", "sec", "security"),

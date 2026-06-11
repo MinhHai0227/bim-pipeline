@@ -3,7 +3,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from src.ifc.asset_rules import ASSET_IFC_CLASSES, ASSET_IFC_GROUPS, ASSET_PROPERTY_SIGNALS
+from src.ifc.asset_rules import (
+    ASSET_IFC_CLASSES,
+    ASSET_IFC_GROUPS,
+    ASSET_PROPERTY_SIGNALS,
+    NON_OPERATIONAL_IFC_CLASSES,
+)
 
 
 def _has_value(value: Any) -> bool:
@@ -29,6 +34,9 @@ def is_operational_asset(element: Any, raw_properties: Mapping[str, Any]) -> boo
 
     if ifc_class in ASSET_IFC_CLASSES:
         return True
+
+    if ifc_class in NON_OPERATIONAL_IFC_CLASSES:
+        return False
 
     for ifc_group in ASSET_IFC_GROUPS:
         if element.is_a(ifc_group):
