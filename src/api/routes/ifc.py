@@ -1,3 +1,6 @@
+import csv
+import io
+
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
@@ -138,6 +141,104 @@ def _validation_issue_response(issue: ValidationIssue) -> dict:
         "field": issue.field,
         "message": issue.message,
         "created_at": issue.created_at,
+    }
+
+
+ISSUE_EXPORT_FIELDNAMES = [
+    "issue_id",
+    "severity",
+    "code",
+    "field",
+    "message",
+    "stage",
+    "asset_db_id",
+    "asset_code",
+    "display_name",
+    "asset_type",
+    "system",
+    "floor",
+    "room",
+    "ifc_element_id",
+    "express_id",
+    "global_id",
+    "ifc_class",
+    "created_at",
+]
+
+
+def _csv_response(filename: str, rows) -> StreamingResponse:
+    def stream():
+        buffer = io.StringIO()
+        buffer.write("\ufeff")
+        writer = csv.DictWriter(buffer, fieldnames=ISSUE_EXPORT_FIELDNAMES)
+        writer.writeheader()
+        yield buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+
+        for row in rows:
+            writer.writerow(
+                {
+                    key: "" if value is None else value
+                    for key, value in row.items()
+                }
+            )
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _validation_issue_filters(
+    file_id: int,
+    severity: ValidationSeverity | None = None,
+    stage: ValidationStage | None = None,
+    code: str | None = None,
+) -> list:
+    filters = [ValidationIssue.ifc_file_id == file_id]
+    if severity is not None:
+        filters.append(ValidationIssue.severity == severity)
+    if stage is not None:
+        filters.append(ValidationIssue.stage == stage)
+    if code:
+        filters.append(ValidationIssue.code == code)
+
+    return filters
+
+
+def _validation_issue_export_row(issue: ValidationIssue) -> dict:
+    asset = issue.asset
+    element = issue.ifc_element
+    display_name = (
+        (asset.name if asset else None)
+        or issue.object_name
+        or (element.name if element else None)
+    )
+
+    return {
+        "issue_id": issue.id,
+        "severity": _enum_key(issue.severity),
+        "code": issue.code,
+        "field": issue.field,
+        "message": issue.message,
+        "stage": _enum_key(issue.stage),
+        "asset_db_id": issue.asset_id,
+        "asset_code": asset.asset_code if asset else None,
+        "display_name": display_name,
+        "asset_type": asset.asset_type if asset else None,
+        "system": asset.system_name if asset else None,
+        "floor": (asset.floor if asset else None) or (element.floor if element else None),
+        "room": (asset.room if asset else None) or (element.room if element else None),
+        "ifc_element_id": issue.ifc_element_id,
+        "express_id": element.express_id if element else None,
+        "global_id": issue.global_id or (asset.global_id if asset else None) or (element.global_id if element else None),
+        "ifc_class": issue.ifc_class or (asset.ifc_class if asset else None) or (element.ifc_class if element else None),
+        "created_at": issue.created_at.isoformat() if issue.created_at else None,
     }
 
 
@@ -294,6 +395,37 @@ def reprocess_ifc_file(file_id: int, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/files/{file_id}/issues/export.csv")
+def export_validation_issues_csv(
+    file_id: int,
+    severity: ValidationSeverity | None = Query(default=None),
+    stage: ValidationStage | None = Query(default=None),
+    code: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    _ensure_ifc_file(db, file_id)
+
+    filters = _validation_issue_filters(file_id, severity, stage, code)
+    issues = db.scalars(
+        select(ValidationIssue)
+        .options(
+            selectinload(ValidationIssue.asset),
+            selectinload(ValidationIssue.ifc_element),
+        )
+        .where(*filters)
+        .order_by(
+            ValidationIssue.severity,
+            ValidationIssue.code,
+            ValidationIssue.created_at.desc(),
+            ValidationIssue.id.desc(),
+        )
+    ).all()
+
+    filename = f"ifc-file-{file_id}-issues.csv"
+    rows = [_validation_issue_export_row(issue) for issue in issues]
+    return _csv_response(filename, rows)
+
+
 @router.get("/files/{file_id}/issues", response_model=ValidationIssueListResponse)
 def list_validation_issues(
     file_id: int,
@@ -306,13 +438,7 @@ def list_validation_issues(
 ):
     _ensure_ifc_file(db, file_id)
 
-    filters = [ValidationIssue.ifc_file_id == file_id]
-    if severity is not None:
-        filters.append(ValidationIssue.severity == severity)
-    if stage is not None:
-        filters.append(ValidationIssue.stage == stage)
-    if code:
-        filters.append(ValidationIssue.code == code)
+    filters = _validation_issue_filters(file_id, severity, stage, code)
 
     total = db.scalar(select(func.count()).select_from(ValidationIssue).where(*filters)) or 0
     issues = db.scalars(

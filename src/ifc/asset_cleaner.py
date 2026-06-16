@@ -194,7 +194,7 @@ def _normalize_asset_type(asset_data: dict, changes: list[dict[str, Any]]) -> No
             changes,
             "asset_type",
             asset_type,
-            "MAP_ASSET_TYPE_FROM_DT_PARAMETER",
+            "MAP_ASSET_TYPE_FROM_DT_PARAMETER", 
         )
         return
 
